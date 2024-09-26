@@ -645,7 +645,7 @@ func getMarketCapCategory(marketCapValue string) string {
 }
 
 func main() {
-	ticker := time.NewTicker(38 * time.Second)
+	ticker := time.NewTicker(48 * time.Second)
 
 	go func() {
 		for t := range ticker.C {
