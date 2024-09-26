@@ -655,7 +655,12 @@ func main() {
 	}
 	GracefulShutdown()
 
-	err := router.Run(":" + "4000")
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "4000"
+	}
+
+	err := router.Run(":" + port)
 	if err != nil {
 		log.Fatalf("Error starting server: %v", err)
 	}
