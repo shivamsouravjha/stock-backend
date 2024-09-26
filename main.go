@@ -645,6 +645,15 @@ func getMarketCapCategory(marketCapValue string) string {
 }
 
 func main() {
+	ticker := time.NewTicker(38 * time.Second)
+
+	go func() {
+		for t := range ticker.C {
+			fmt.Println("Tick at", t)
+
+		}
+	}()
+
 	router := gin.New()
 	router.Use(CORSMiddleware())
 
