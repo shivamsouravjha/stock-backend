@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"math"
@@ -185,19 +187,19 @@ func analyzeTrend(stock Stock, pastData interface{}) float64 {
 
 	// Ensure pastData is in bson.M format
 	if data, ok := pastData.(bson.M); ok {
-		for key, quarterData := range data {
-			fmt.Printf("Processing quarter: %s\n", key)
+		for _, quarterData := range data {
+			// fmt.Printf("Processing quarter: %s\n", key)
 
 			// Process the quarter data if it's a primitive.A (array of quarter maps)
 			if quarterArray, ok := quarterData.(primitive.A); ok {
 				var prevElem bson.M
 				for i, elem := range quarterArray {
 					if elemMap, ok := elem.(bson.M); ok {
-						fmt.Printf("Processing quarter element: %v\n", elemMap)
+						// fmt.Printf("Processing quarter element: %v\n", elemMap)
 
 						// Only perform comparisons starting from the second element
 						if i > 0 && prevElem != nil {
-							fmt.Println("Comparing with previous element")
+							// fmt.Println("Comparing with previous element")
 
 							// Iterate over the keys in the current quarter and compare with previous quarter
 							for key, v := range elemMap {
@@ -215,16 +217,10 @@ func analyzeTrend(stock Stock, pastData interface{}) float64 {
 						}
 						// Update previous element for next iteration
 						prevElem = elemMap
-					} else {
-						fmt.Println("Element is not bson.M, skipping:", elem)
 					}
 				}
-			} else {
-				fmt.Printf("Data for key %s is not a primitive.A: %v\n", key, quarterData)
 			}
 		}
-	} else {
-		fmt.Println("Past data is not in the expected bson.M format.")
 	}
 
 	// Normalize the score by dividing it by the number of comparisons
@@ -239,23 +235,23 @@ func prosConsAdjustment(stock Stock) float64 {
 	adjustment := 0.0
 
 	// Adjust score based on pros
-	for _, pro := range stock.Pros {
-		fmt.Println("Pro: ", pro) // This line is optional, just showing how we could use 'pro'
-		adjustment += 1.0
-	}
+	// for _, pro := range stock.Pros {
+	// fmt.Println("Pro: ", pro) // This line is optional, just showing how we could use 'pro'
+	adjustment += toFloat(1.0 * len(stock.Pros))
+	// }
 
 	// Adjust score based on cons
-	for _, con := range stock.Cons {
-		fmt.Println("Con: ", con) // This line is optional, just showing how we could use 'con'
-		adjustment -= 1.0
-	}
+	// for _, con := range stock.Cons {
+	// fmt.Println("Con: ", con) // This line is optional, just showing how we could use 'con'
+	adjustment -= toFloat(1.0 * len(stock.Cons))
+	// }/
 
 	return adjustment
 }
 
 // rateStock calculates the final stock rating
 func rateStock(stock map[string]interface{}) float64 {
-	fmt.Println(stock["cons"], "abcd", stock["pros"])
+	// fmt.Println(stock["cons"], "abcd", stock["pros"])
 	stockData := Stock{
 		Name:          stock["name"].(string),
 		PE:            toFloat(stock["stockPE"]),
@@ -265,16 +261,33 @@ func rateStock(stock map[string]interface{}) float64 {
 		Cons:          toStringArray(stock["cons"]),
 		Pros:          toStringArray(stock["pros"]),
 	}
-	fmt.Println(stock["stockPE"])
-	fmt.Println(stockData)
+	// fmt.Println(stock["stockPE"])
+	// fmt.Println(stockData)
 	peerComparisonScore := compareWithPeers(stockData, stock["peers"]) * 0.5
 	trendScore := analyzeTrend(stockData, stock["quarterlyResults"]) * 0.4
 	// prosConsScore := prosConsAdjustment(stock) * 0.1
-	fmt.Println(peerComparisonScore, trendScore)
+	// fmt.Println(peerComparisonScore, trendScore)
 
 	finalScore := peerComparisonScore + trendScore
 	finalScore = math.Round(finalScore*100) / 100
 	return finalScore
+}
+
+// Helper function to normalize strings
+func normalizeString(s string) string {
+	return strings.ToLower(strings.TrimSpace(s))
+}
+
+// Helper function to match header titles
+func matchHeader(cellValue string, patterns []string) bool {
+	normalizedValue := normalizeString(cellValue)
+	for _, pattern := range patterns {
+		matched, _ := regexp.MatchString(pattern, normalizedValue)
+		if matched {
+			return true
+		}
+	}
+	return false
 }
 
 var (
@@ -283,11 +296,11 @@ var (
 )
 
 func init() {
-	fmt.Println("sadlfnml")
+	// fmt.Println("sadlfnml")
 	once.Do(func() {
 		serverAPI := options.ServerAPI(options.ServerAPIVersion1)
 		mongoURI := os.Getenv("MONGO_URI")
-		fmt.Println(mongoURI)
+		// fmt.Println(mongoURI)
 		opts := options.Client().ApplyURI(mongoURI).SetServerAPIOptions(serverAPI)
 		// Create a new client and connect to the server
 		var err error
@@ -375,7 +388,10 @@ func parseXlsxFile(c *gin.Context) {
 		c.JSON(400, gin.H{"error": "No files found"})
 		return
 	}
+
 	stockDetails := []map[string]interface{}{}
+
+	// Set headers for chunked transfer (if needed)
 	c.Writer.Header().Set("Content-Type", "text/plain")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
@@ -390,8 +406,18 @@ func parseXlsxFile(c *gin.Context) {
 		}
 		defer file.Close()
 
+		// Read the file content into memory
+		data, err := io.ReadAll(file)
+		if err != nil {
+			log.Printf("Error reading file %s: %v", fileHeader.Filename, err)
+			continue
+		}
+
+		// Create a new reader from the data
+		reader := bytes.NewReader(data)
+
 		// Parse the file as an XLSX
-		f, err := excelize.OpenReader(file)
+		f, err := excelize.OpenReader(reader)
 		if err != nil {
 			log.Printf("Error parsing XLSX file %s: %v", fileHeader.Filename, err)
 			continue
@@ -410,175 +436,200 @@ func parseXlsxFile(c *gin.Context) {
 				log.Printf("Error reading rows from sheet %s: %v", sheet, err)
 				continue
 			}
-			// fmt.Println(len(rows))
-			startExtracting := false
+
+			headerFound := false
+			headerMap := make(map[string]int)
 			stopExtracting := false
-			// fmt.Println(rows)
+
 			// Loop through the rows in the sheet
 			for _, row := range rows {
-				// Skip empty rows
-				// fmt.Println(len(row))
 				if len(row) == 0 {
 					continue
 				}
 
-				// Check for the start marker "(a) Listed / awaiting listing on Stock Exchanges"
-				if checkInstrumentName(strings.Join(row, "")) {
-					startExtracting = true
+				if !headerFound {
+					for _, cell := range row {
+						if matchHeader(cell, []string{`name\s*of\s*(the)?\s*instrument`}) {
+							headerFound = true
+							// Build the header map
+							for i, headerCell := range row {
+								normalizedHeader := normalizeString(headerCell)
+								// Map possible variations to standard keys
+								switch {
+								case matchHeader(normalizedHeader, []string{`name\s*of\s*(the)?\s*instrument`}):
+									headerMap["Name of the Instrument"] = i
+								case matchHeader(normalizedHeader, []string{`isin`}):
+									headerMap["ISIN"] = i
+								case matchHeader(normalizedHeader, []string{`rating\s*/\s*industry`, `industry\s*/\s*rating`}):
+									headerMap["Industry/Rating"] = i
+								case matchHeader(normalizedHeader, []string{`quantity`}):
+									headerMap["Quantity"] = i
+								case matchHeader(normalizedHeader, []string{`market\s*/\s*fair\s*value.*`, `market\s*value.*`}):
+									headerMap["Market/Fair Value"] = i
+								case matchHeader(normalizedHeader, []string{`%.*nav`, `%.*net\s*assets`}):
+									headerMap["Percentage of AUM"] = i
+								}
+							}
+							// fmt.Printf("Header found: %v\n", headerMap)
+							break
+						}
+					}
 					continue
 				}
 
-				// Check for the end marker "Subtotal"
-				if strings.Contains(strings.Join(row, ""), "Subtotal") || strings.Contains(strings.Join(row, ""), "Total") {
+				// Check for the end marker "Subtotal" or "Total"
+				joinedRow := strings.Join(row, "")
+				if strings.Contains(strings.ToLower(joinedRow), "subtotal") || strings.Contains(strings.ToLower(joinedRow), "total") {
 					stopExtracting = true
 					break
 				}
-				// fmt.Println(startExtracting, stopExtracting)
-				var stockDetail map[string]interface{}
 
-				// If we are in the relevant section, extract and print the stock data
-				if startExtracting && !stopExtracting {
-					if len(row) >= 7 { // Ensure row has enough columns
-						if row[1] != "" && row[2] != "" && row[3] != "" && row[4] != "" && row[5] != "" && row[6] != "" {
-							stockDetails = append(stockDetails, map[string]interface{}{
-								"Name of the Instrument": row[1],
-								"ISIN":                   row[2],
-								"Industry/Rating":        row[3],
-								"Quantity":               row[4],
-								"Market/Fair Value":      row[5],
-								"Percentage of AUM":      row[6],
-							})
-							stockDetail = map[string]interface{}{
-								"Name of the Instrument": row[1],
-								"ISIN":                   row[2],
-								"Industry/Rating":        row[3],
-								"Quantity":               row[4],
-								"Market/Fair Value":      row[5],
-								"Percentage of AUM":      row[6],
-							}
+				if !stopExtracting {
+					stockDetail := make(map[string]interface{})
+
+					// Extract data using the header map
+					for key, idx := range headerMap {
+						if idx < len(row) {
+							stockDetail[key] = row[idx]
+						} else {
+							stockDetail[key] = ""
 						}
 					}
-				}
-				if len(stockDetail) == 0 || stockDetail["Name of the Instrument"] == nil || stockDetail["ISIN"] == "" {
-					continue
-				}
-				// fmt.Println("stockDetail", stockDetail)
-				if mapValues[stockDetail["Name of the Instrument"].(string)] != "" {
-					stockDetail["Name of the Instrument"] = mapValues[stockDetail["Name of the Instrument"].(string)]
-				}
-				queryString := stockDetail["Name of the Instrument"].(string)
-				queryString = strings.ReplaceAll(queryString, " Corporation ", " Corpn ")
-				queryString = strings.ReplaceAll(queryString, " corporation ", " Corpn ")
-				queryString = strings.ReplaceAll(queryString, " Limited", " Ltd ")
-				queryString = strings.ReplaceAll(queryString, " limited", " Ltd ")
-				queryString = strings.ReplaceAll(queryString, " and ", " & ")
-				queryString = strings.ReplaceAll(queryString, " And ", " & ")
-				textSearchFilter := bson.M{
-					"$text": bson.M{
-						"$search": queryString, // Replace with your search term
-					},
-				}
-				// fmt.Println("queryString", queryString)
-				collection := client.Database(os.Getenv("DATABASE")).Collection(os.Getenv("COLLECTION"))
-				findOptions := options.FindOne()
-				findOptions.SetProjection(bson.M{
-					"score": bson.M{"$meta": "textScore"},
-				})
-				findOptions.SetSort(bson.M{
-					"score": bson.M{"$meta": "textScore"},
-				})
-				// Perform the search
-				var result bson.M
-				// fmt.Println(findOptions, textSearchFilter, "findOptions")
-				err = collection.FindOne(context.TODO(), textSearchFilter, findOptions).Decode(&result)
-				if err != nil {
-					fmt.Println(err)
-					continue
-				}
-				if score, ok := result["score"].(float64); ok && score >= 1 {
-					fmt.Println("marketCap", result["marketCap"], "name", stockDetail["Name of the Instrument"]) // Print the relevance score
-					stockDetail["marketCapValue"] = result["marketCap"]
-					stockDetail["url"] = result["url"]
-					stockDetail["marketCap"] = getMarketCapCategory(result["marketCap"].(string))
-					stockDetail["stockRate"] = rateStock(result)
+
+					// Check if the stockDetail has meaningful data
+					if stockDetail["Name of the Instrument"] == nil || stockDetail["Name of the Instrument"] == "" {
+						continue
+					}
+
+					stockDetails = append(stockDetails, stockDetail)
+
+					// Additional processing
+					instrumentName, ok := stockDetail["Name of the Instrument"].(string)
+					if !ok {
+						continue
+					}
+
+					// Apply mapping if exists
+					if mappedName, exists := mapValues[instrumentName]; exists {
+						stockDetail["Name of the Instrument"] = mappedName
+						instrumentName = mappedName
+					}
+
+					// Clean up the query string
+					queryString := instrumentName
+					queryString = strings.ReplaceAll(queryString, " Corporation ", " Corpn ")
+					queryString = strings.ReplaceAll(queryString, " corporation ", " Corpn ")
+					queryString = strings.ReplaceAll(queryString, " Limited", " Ltd ")
+					queryString = strings.ReplaceAll(queryString, " limited", " Ltd ")
+					queryString = strings.ReplaceAll(queryString, " and ", " & ")
+					queryString = strings.ReplaceAll(queryString, " And ", " & ")
+
+					// Prepare the text search filter
+					textSearchFilter := bson.M{
+						"$text": bson.M{
+							"$search": queryString,
+						},
+					}
+
+					// MongoDB collection
+					collection := client.Database(os.Getenv("DATABASE")).Collection(os.Getenv("COLLECTION"))
+
+					// Set find options
+					findOptions := options.FindOne()
+					findOptions.SetProjection(bson.M{
+						"score": bson.M{"$meta": "textScore"},
+					})
+					findOptions.SetSort(bson.M{
+						"score": bson.M{"$meta": "textScore"},
+					})
+
+					// Perform the search
+					var result bson.M
+					err = collection.FindOne(context.TODO(), textSearchFilter, findOptions).Decode(&result)
+					if err != nil {
+						fmt.Println(err)
+						continue
+					}
+
+					// Process based on the score
+					if score, ok := result["score"].(float64); ok {
+						if score >= 1 {
+							// fmt.Println("marketCap", result["marketCap"], "name", stockDetail["Name of the Instrument"])
+							stockDetail["marketCapValue"] = result["marketCap"]
+							stockDetail["url"] = result["url"]
+							stockDetail["marketCap"] = getMarketCapCategory(fmt.Sprintf("%v", result["marketCap"]))
+							stockDetail["stockRate"] = rateStock(result)
+						} else {
+							// fmt.Println("score less than 1", score)
+							results, err := searchCompany(instrumentName)
+							if err != nil || len(results) == 0 {
+								fmt.Println("No company found:", err)
+								continue
+							}
+							data, err := fetchCompanyData(results[0].URL)
+							if err != nil {
+								fmt.Println("Error fetching company data:", err)
+								continue
+							}
+							// Update MongoDB with fetched data
+							update := bson.M{
+								"$set": bson.M{
+									"marketCap":           data["Market Cap"],
+									"currentPrice":        data["Current Price"],
+									"highLow":             data["High / Low"],
+									"stockPE":             data["Stock P/E"],
+									"bookValue":           data["Book Value"],
+									"dividendYield":       data["Dividend Yield"],
+									"roce":                data["ROCE"],
+									"roe":                 data["ROE"],
+									"faceValue":           data["Face Value"],
+									"pros":                data["pros"],
+									"cons":                data["cons"],
+									"quarterlyResults":    data["quarterlyResults"],
+									"profitLoss":          data["profitLoss"],
+									"balanceSheet":        data["balanceSheet"],
+									"cashFlows":           data["cashFlows"],
+									"ratios":              data["ratios"],
+									"shareholdingPattern": data["shareholdingPattern"],
+									"peersTable":          data["peersTable"],
+									"peers":               data["peers"],
+								},
+							}
+							updateOptions := options.Update().SetUpsert(true)
+							filter := bson.M{"name": results[0].Name}
+							_, err = collection.UpdateOne(context.TODO(), filter, update, updateOptions)
+							if err != nil {
+								log.Printf("Failed to update document for company %s: %v\n", results[0].Name, err)
+							} else {
+								fmt.Printf("Successfully updated document for company %s.\n", results[0].Name)
+							}
+						}
+					} else {
+						fmt.Println("No score available for", instrumentName)
+					}
+
+					// Marshal and write the stockDetail
 					stockDataMarshal, err := json.Marshal(stockDetail)
 					if err != nil {
 						log.Println("Error marshalling data:", err)
 						continue
 					}
 
-					_, err = c.Writer.Write([]byte(string(stockDataMarshal) + "\n")) // Send each stockDetail as JSON with a newline separator
+					_, err = c.Writer.Write(append(stockDataMarshal, '\n')) // Send each stockDetail as JSON with a newline separator
 
 					if err != nil {
 						log.Println("Error writing data:", err)
 						break
 					}
 					c.Writer.Flush() // Flush each chunk immediately
-
-					if err != nil {
-						fmt.Println(err)
-					}
-				} else if score < 1 {
-					fmt.Println("score less than 1", score)
-					results, err := searchCompany(stockDetail["Name of the Instrument"].(string))
-					if err != nil {
-						fmt.Println(err.Error())
-						continue
-					}
-					if len(results) < 1 {
-						continue
-					}
-					fmt.Println(results)
-					data, err := fetchCompanyData(results[0].URL)
-					if err != nil {
-						fmt.Println(err.Error(), results[0].Name, results[0].URL)
-					}
-					fmt.Println(data)
-					update := bson.M{
-						"$set": bson.M{
-							"marketCap":           data["Market Cap"],
-							"currentPrice":        data["Current Price"],
-							"highLow":             data["High / Low"],
-							"stockPE":             data["Stock P/E"],
-							"bookValue":           data["Book Value"],
-							"dividendYield":       data["Dividend Yield"],
-							"roce":                data["ROCE"],
-							"roe":                 data["ROE"],
-							"faceValue":           data["Face Value"],
-							"pros":                data["pros"],             // Add pros to the update
-							"cons":                data["cons"],             // Add cons to the update
-							"quarterlyResults":    data["quarterlyResults"], // Add quarterly results to the update
-							"profitLoss":          data["profitLoss"],
-							"balanceSheet":        data["balanceSheet"],
-							"cashFlows":           data["cashFlows"],
-							"ratios":              data["ratios"],
-							"shareholdingPattern": data["shareholdingPattern"],
-							"peersTable":          data["peersTable"],
-							"peers":               data["peers"],
-						},
-					}
-					options := options.Update().SetUpsert(true) // Use upsert to insert if document doesn't exist
-					filter := bson.M{"name": results[0].Name}   // Find document by company name
-					_, err = collection.UpdateOne(context.TODO(), filter, update, options)
-
-					if err != nil {
-						log.Printf("Failed to update document for company %s: %v\n", results[0].Name, err)
-					} else {
-						fmt.Printf("Successfully updated document for company %s.\n", results[0].Name)
-					}
-
-					// fmt.Println("low score", score, "url", result["url"], "name", stockDetail["Name of the Instrument"])
-
-				} else {
-					fmt.Println("no score", score)
 				}
-
 			}
 		}
 	}
 	c.Writer.Write([]byte("\nStream complete.\n"))
 	c.Writer.Flush() // Ensure the final response is sent
 }
+
 func toFloat(value interface{}) float64 {
 	if str, ok := value.(string); ok {
 		// Remove commas from the string
@@ -610,13 +661,10 @@ func toFloat(value interface{}) float64 {
 
 func toStringArray(value interface{}) []string {
 	if arr, ok := value.(primitive.A); ok {
-		fmt.Println("Converting primitive.A to []string")
 		var strArr []string
 		for _, v := range arr {
 			if str, ok := v.(string); ok {
 				strArr = append(strArr, str)
-			} else {
-				fmt.Println("Non-string value in primitive.A, ignoring:", v)
 			}
 		}
 		return strArr
@@ -632,7 +680,6 @@ func getMarketCapCategory(marketCapValue string) string {
 	if err != nil {
 		fmt.Println("Failed to convert market cap to integer: %v", err)
 	}
-	fmt.Println(marketCap)
 	// Define market cap categories in crore (or billions as per comment)
 	if marketCap >= 20000 {
 		return "Large Cap"
@@ -699,8 +746,6 @@ func fetchCompanyData(url string) (map[string]interface{}, error) {
 		peerData, err := fetchPeerData(dataWarehouseID)
 		if err == nil {
 			companyData["peers"] = peerData
-		} else {
-			fmt.Println("Failed to fetch peer data: %v", err)
 		}
 	}
 
@@ -897,7 +942,6 @@ func fetchPeerData(dataWarehouseID string) ([]map[string]string, error) {
 	})
 
 	peersData = append(peersData, medianData)
-	fmt.Println(peersData)
 	return peersData, nil
 }
 
@@ -915,7 +959,6 @@ func searchCompany(queryString string) ([]Company, error) {
 	queryString = strings.ReplaceAll(queryString, " limited", " Ltd ")
 	queryString = strings.ReplaceAll(queryString, " and ", " & ")
 	queryString = strings.ReplaceAll(queryString, " And ", " & ")
-	fmt.Println(queryString)
 	// Base URL for the Screener API
 	baseURL := os.Getenv("COMPANY_URL") + "/api/company/search/"
 
