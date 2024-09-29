@@ -3,6 +3,9 @@
 
 This project is an API built using the Gin framework for analyzing stock data. It processes Excel files, fetches stock data, calculates various stock metrics, and compares them with peer companies to derive useful insights.
 
+![DALL·E 2024-09-29 14 31 43 - A blue gopher character dressed in traditional Indian attire like a kurta, sitting in front of multiple computer screens analyzing the Indian stock ma](https://github.com/user-attachments/assets/7d56bc51-8cd9-49f7-a5e8-d8c3cc77cacb)
+
+
 ## Features
 
 - Upload Excel files to parse and analyze stock data.
