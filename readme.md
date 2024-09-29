@@ -133,3 +133,33 @@ func rateStock(stock map[string]interface{}) float64 {
 2. Create a new branch for your feature or bugfix.
 3. Submit a pull request with detailed information about your changes.
 
+## Restore MongoDB Data
+
+To restore a MongoDB backup using `mongorestore`:
+
+1. Ensure your backup files are in the correct directory structure. The `.bson` and `.json` files should be inside a directory named after the database you are restoring. For example:
+    ```
+    mongo_backup/
+    └── mydatabase/
+        ├── companies.bson
+        ├── companies.metadata.json
+    ```
+
+2. If the backup is on your local machine, copy it into the MongoDB container:
+    ```bash
+    docker cp ./mongo_backup/ mongodb_container:/data/db/backup
+    ```
+
+3. Run the following command to restore the database:
+    ```bash
+    docker exec -it mongodb_container mongorestore --dir /data/db/backup/mydatabase
+    ```
+
+    This will restore the data from the `mydatabase` directory into your MongoDB instance.
+
+## Check Restored Data
+
+Once the restore is complete, you can check the restored data by connecting to the MongoDB instance:
+
+```bash
+docker exec -it mongodb_container mongo
