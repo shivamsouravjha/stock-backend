@@ -1,11 +1,9 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"math"
@@ -23,6 +21,10 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	"github.com/gin-gonic/gin"
 	"github.com/xuri/excelize/v2"
+	"github.com/cloudinary/cloudinary-go/v2"
+	"github.com/cloudinary/cloudinary-go/v2/api/uploader"
+	"github.com/joho/godotenv"
+	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -296,6 +298,10 @@ var (
 )
 
 func init() {
+	err := godotenv.Load()
+    if err != nil {
+        log.Println("Error loading .env file")
+    }
 	// fmt.Println("sadlfnml")
 	once.Do(func() {
 		serverAPI := options.ServerAPI(options.ServerAPIVersion1)
@@ -383,13 +389,18 @@ func parseXlsxFile(c *gin.Context) {
 	}
 
 	// Retrieve the files from the form
-	files := form.File["files"] // 'files' is the name of the form field for the multiple XLSX files
+	files := form.File["files"]
 	if len(files) == 0 {
 		c.JSON(400, gin.H{"error": "No files found"})
 		return
 	}
 
-	stockDetails := []map[string]interface{}{}
+	// Initialize Cloudinary
+	cld, err := cloudinary.NewFromURL(os.Getenv("CLOUDINARY_URL"))
+	if err != nil {
+		c.JSON(500, gin.H{"error": "Error initializing Cloudinary"})
+		return
+	}
 
 	// Set headers for chunked transfer (if needed)
 	c.Writer.Header().Set("Content-Type", "text/plain")
@@ -406,18 +417,25 @@ func parseXlsxFile(c *gin.Context) {
 		}
 		defer file.Close()
 
-		// Read the file content into memory
-		data, err := io.ReadAll(file)
+		// Generate a UUID for the filename
+		uuid := uuid.New().String()
+		cloudinaryFilename := uuid + ".xlsx"
+
+		// Upload file to Cloudinary
+		uploadResult, err := cld.Upload.Upload(c, file, uploader.UploadParams{
+			PublicID: cloudinaryFilename,
+			Folder:   "xlsx_uploads",
+		})
 		if err != nil {
-			log.Printf("Error reading file %s: %v", fileHeader.Filename, err)
+			log.Printf("Error uploading file %s to Cloudinary: %v", fileHeader.Filename, err)
 			continue
 		}
 
-		// Create a new reader from the data
-		reader := bytes.NewReader(data)
+		log.Printf("File uploaded to Cloudinary: %s", uploadResult.SecureURL)
 
-		// Parse the file as an XLSX
-		f, err := excelize.OpenReader(reader)
+		// Create a new reader from the uploaded file
+		file.Seek(0, 0) // Reset file pointer to the beginning
+		f, err := excelize.OpenReader(file)
 		if err != nil {
 			log.Printf("Error parsing XLSX file %s: %v", fileHeader.Filename, err)
 			continue
@@ -500,8 +518,6 @@ func parseXlsxFile(c *gin.Context) {
 					if stockDetail["Name of the Instrument"] == nil || stockDetail["Name of the Instrument"] == "" {
 						continue
 					}
-
-					stockDetails = append(stockDetails, stockDetail)
 
 					// Additional processing
 					instrumentName, ok := stockDetail["Name of the Instrument"].(string)
@@ -692,6 +708,10 @@ func getMarketCapCategory(marketCapValue string) string {
 }
 
 func main() {
+
+	fmt.Println("MONGO_URI:", os.Getenv("MONGO_URI"))
+    fmt.Println("CLOUDINARY_URL:", os.Getenv("CLOUDINARY_URL"))
+
 	ticker := time.NewTicker(48 * time.Second)
 
 	go func() {
