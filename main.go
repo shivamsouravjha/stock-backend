@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"os/signal"
 	"regexp"
 	"strconv"
@@ -19,12 +20,12 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/gin-gonic/gin"
-	"github.com/xuri/excelize/v2"
 	"github.com/cloudinary/cloudinary-go/v2"
 	"github.com/cloudinary/cloudinary-go/v2/api/uploader"
-	"github.com/joho/godotenv"
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/joho/godotenv"
+	"github.com/xuri/excelize/v2"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -299,9 +300,9 @@ var (
 
 func init() {
 	err := godotenv.Load()
-    if err != nil {
-        log.Println("Error loading .env file")
-    }
+	if err != nil {
+		log.Println("Error loading .env file")
+	}
 	// fmt.Println("sadlfnml")
 	once.Do(func() {
 		serverAPI := options.ServerAPI(options.ServerAPIVersion1)
@@ -646,6 +647,9 @@ func parseXlsxFile(c *gin.Context) {
 	c.Writer.Flush() // Ensure the final response is sent
 }
 
+func runningServer(c *gin.Context) {
+	c.JSON(200, gin.H{"message": "Server is running"})
+}
 func toFloat(value interface{}) float64 {
 	if str, ok := value.(string); ok {
 		// Remove commas from the string
@@ -710,13 +714,22 @@ func getMarketCapCategory(marketCapValue string) string {
 func main() {
 
 	fmt.Println("MONGO_URI:", os.Getenv("MONGO_URI"))
-    fmt.Println("CLOUDINARY_URL:", os.Getenv("CLOUDINARY_URL"))
+	fmt.Println("CLOUDINARY_URL:", os.Getenv("CLOUDINARY_URL"))
 
 	ticker := time.NewTicker(48 * time.Second)
 
 	go func() {
 		for t := range ticker.C {
 			fmt.Println("Tick at", t)
+			cmd := exec.Command("curl", "https://stock-backend-hz83.onrender.com/api/keepServerRunning")
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				fmt.Println("Error running curl:", err)
+				return
+			}
+
+			// Print the output of the curl command
+			fmt.Println("Curl output:", string(output))
 
 		}
 	}()
@@ -728,6 +741,7 @@ func main() {
 
 	{
 		v1.POST("/uploadXlsx", parseXlsxFile)
+		v1.GET("/keepServerRunning", runningServer)
 	}
 	GracefulShutdown()
 
