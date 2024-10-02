@@ -72,7 +72,7 @@ func compareWithPeers(stock Stock, peers interface{}) float64 {
 	if arr, ok := peers.(primitive.A); ok {
 		// Ensure there are enough peers to compare
 		if len(arr) < 2 {
-			fmt.Println("Not enough peers to compare")
+			log.Println("Not enough peers to compare")
 			return 0.0
 		}
 
@@ -191,18 +191,18 @@ func analyzeTrend(stock Stock, pastData interface{}) float64 {
 	// Ensure pastData is in bson.M format
 	if data, ok := pastData.(bson.M); ok {
 		for _, quarterData := range data {
-			// fmt.Printf("Processing quarter: %s\n", key)
+			// log.Printf("Processing quarter: %s\n", key)
 
 			// Process the quarter data if it's a primitive.A (array of quarter maps)
 			if quarterArray, ok := quarterData.(primitive.A); ok {
 				var prevElem bson.M
 				for i, elem := range quarterArray {
 					if elemMap, ok := elem.(bson.M); ok {
-						// fmt.Printf("Processing quarter element: %v\n", elemMap)
+						// log.Printf("Processing quarter element: %v\n", elemMap)
 
 						// Only perform comparisons starting from the second element
 						if i > 0 && prevElem != nil {
-							// fmt.Println("Comparing with previous element")
+							// log.Println("Comparing with previous element")
 
 							// Iterate over the keys in the current quarter and compare with previous quarter
 							for key, v := range elemMap {
@@ -239,13 +239,13 @@ func prosConsAdjustment(stock Stock) float64 {
 
 	// Adjust score based on pros
 	// for _, pro := range stock.Pros {
-	// fmt.Println("Pro: ", pro) // This line is optional, just showing how we could use 'pro'
+	// log.Println("Pro: ", pro) // This line is optional, just showing how we could use 'pro'
 	adjustment += toFloat(1.0 * len(stock.Pros))
 	// }
 
 	// Adjust score based on cons
 	// for _, con := range stock.Cons {
-	// fmt.Println("Con: ", con) // This line is optional, just showing how we could use 'con'
+	// log.Println("Con: ", con) // This line is optional, just showing how we could use 'con'
 	adjustment -= toFloat(1.0 * len(stock.Cons))
 	// }/
 
@@ -254,7 +254,7 @@ func prosConsAdjustment(stock Stock) float64 {
 
 // rateStock calculates the final stock rating
 func rateStock(stock map[string]interface{}) float64 {
-	// fmt.Println(stock["cons"], "abcd", stock["pros"])
+	// log.Println(stock["cons"], "abcd", stock["pros"])
 	stockData := Stock{
 		Name:          stock["name"].(string),
 		PE:            toFloat(stock["stockPE"]),
@@ -264,12 +264,12 @@ func rateStock(stock map[string]interface{}) float64 {
 		Cons:          toStringArray(stock["cons"]),
 		Pros:          toStringArray(stock["pros"]),
 	}
-	// fmt.Println(stock["stockPE"])
-	// fmt.Println(stockData)
+	// log.Println(stock["stockPE"])
+	// log.Println(stockData)
 	peerComparisonScore := compareWithPeers(stockData, stock["peers"]) * 0.5
 	trendScore := analyzeTrend(stockData, stock["quarterlyResults"]) * 0.4
 	// prosConsScore := prosConsAdjustment(stock) * 0.1
-	// fmt.Println(peerComparisonScore, trendScore)
+	// log.Println(peerComparisonScore, trendScore)
 
 	finalScore := peerComparisonScore + trendScore
 	finalScore = math.Round(finalScore*100) / 100
@@ -303,11 +303,11 @@ func init() {
 	if err != nil {
 		log.Println("Error loading .env file")
 	}
-	// fmt.Println("sadlfnml")
+	// log.Println("sadlfnml")
 	once.Do(func() {
 		serverAPI := options.ServerAPI(options.ServerAPIVersion1)
 		mongoURI := os.Getenv("MONGO_URI")
-		// fmt.Println(mongoURI)
+		// log.Println(mongoURI)
 		opts := options.Client().ApplyURI(mongoURI).SetServerAPIOptions(serverAPI)
 		// Create a new client and connect to the server
 		var err error
@@ -322,7 +322,7 @@ func init() {
 			panic(err)
 		}
 
-		fmt.Println("Pinged your deployment. You successfully connected to MongoDB!")
+		log.Println("Pinged your deployment. You successfully connected to MongoDB!")
 
 	})
 
@@ -447,7 +447,7 @@ func parseXlsxFile(c *gin.Context) {
 		sheetList := f.GetSheetList()
 		// Loop through the sheets and extract relevant information
 		for _, sheet := range sheetList {
-			fmt.Printf("Processing file: %s, Sheet: %s\n", fileHeader.Filename, sheet)
+			log.Printf("Processing file: %s, Sheet: %s\n", fileHeader.Filename, sheet)
 
 			// Get all the rows in the sheet
 			rows, err := f.GetRows(sheet)
@@ -489,7 +489,7 @@ func parseXlsxFile(c *gin.Context) {
 									headerMap["Percentage of AUM"] = i
 								}
 							}
-							// fmt.Printf("Header found: %v\n", headerMap)
+							// log.Printf("Header found: %v\n", headerMap)
 							break
 						}
 					}
@@ -564,28 +564,28 @@ func parseXlsxFile(c *gin.Context) {
 					var result bson.M
 					err = collection.FindOne(context.TODO(), textSearchFilter, findOptions).Decode(&result)
 					if err != nil {
-						fmt.Println(err)
+						log.Println(err)
 						continue
 					}
 
 					// Process based on the score
 					if score, ok := result["score"].(float64); ok {
 						if score >= 1 {
-							// fmt.Println("marketCap", result["marketCap"], "name", stockDetail["Name of the Instrument"])
+							// log.Println("marketCap", result["marketCap"], "name", stockDetail["Name of the Instrument"])
 							stockDetail["marketCapValue"] = result["marketCap"]
 							stockDetail["url"] = result["url"]
 							stockDetail["marketCap"] = getMarketCapCategory(fmt.Sprintf("%v", result["marketCap"]))
 							stockDetail["stockRate"] = rateStock(result)
 						} else {
-							// fmt.Println("score less than 1", score)
+							// log.Println("score less than 1", score)
 							results, err := searchCompany(instrumentName)
 							if err != nil || len(results) == 0 {
-								fmt.Println("No company found:", err)
+								log.Println("No company found:", err)
 								continue
 							}
 							data, err := fetchCompanyData(results[0].URL)
 							if err != nil {
-								fmt.Println("Error fetching company data:", err)
+								log.Println("Error fetching company data:", err)
 								continue
 							}
 							// Update MongoDB with fetched data
@@ -618,11 +618,11 @@ func parseXlsxFile(c *gin.Context) {
 							if err != nil {
 								log.Printf("Failed to update document for company %s: %v\n", results[0].Name, err)
 							} else {
-								fmt.Printf("Successfully updated document for company %s.\n", results[0].Name)
+								log.Printf("Successfully updated document for company %s.\n", results[0].Name)
 							}
 						}
 					} else {
-						fmt.Println("No score available for", instrumentName)
+						log.Println("No score available for", instrumentName)
 					}
 
 					// Marshal and write the stockDetail
@@ -662,7 +662,7 @@ func toFloat(value interface{}) float64 {
 			// Convert to float and divide by 100 to get the decimal equivalent
 			f, err := strconv.ParseFloat(cleanStr, 64)
 			if err != nil {
-				fmt.Println("Error converting to float64:", err)
+				log.Println("Error converting to float64:", err)
 				return 0.0
 			}
 			return f / 100.0
@@ -671,7 +671,7 @@ func toFloat(value interface{}) float64 {
 		// Parse the cleaned string to float
 		f, err := strconv.ParseFloat(cleanStr, 64)
 		if err != nil {
-			fmt.Println("Error converting to float64:", err)
+			log.Println("Error converting to float64:", err)
 			return 0.0
 		}
 		return f
@@ -698,7 +698,7 @@ func getMarketCapCategory(marketCapValue string) string {
 
 	marketCap, err := strconv.ParseFloat(cleanMarketCapValue, 64) // 64-bit float
 	if err != nil {
-		fmt.Println("Failed to convert market cap to integer: %v", err)
+		log.Println("Failed to convert market cap to integer: %v", err)
 	}
 	// Define market cap categories in crore (or billions as per comment)
 	if marketCap >= 20000 {
@@ -713,23 +713,23 @@ func getMarketCapCategory(marketCapValue string) string {
 
 func main() {
 
-	fmt.Println("MONGO_URI:", os.Getenv("MONGO_URI"))
-	fmt.Println("CLOUDINARY_URL:", os.Getenv("CLOUDINARY_URL"))
+	log.Println("MONGO_URI:", os.Getenv("MONGO_URI"))
+	log.Println("CLOUDINARY_URL:", os.Getenv("CLOUDINARY_URL"))
 
 	ticker := time.NewTicker(48 * time.Second)
 
 	go func() {
 		for t := range ticker.C {
-			fmt.Println("Tick at", t)
+			log.Println("Tick at", t)
 			cmd := exec.Command("curl", "https://stock-backend-hz83.onrender.com/api/keepServerRunning")
 			output, err := cmd.CombinedOutput()
 			if err != nil {
-				fmt.Println("Error running curl:", err)
+				log.Println("Error running curl:", err)
 				return
 			}
 
 			// Print the output of the curl command
-			fmt.Println("Curl output:", string(output))
+			log.Println("Curl output:", string(output))
 
 		}
 	}()
@@ -809,7 +809,7 @@ func fetchCompanyData(url string) (map[string]interface{}, error) {
 		companyData[key] = value
 
 		// Print cleaned key-value pairs
-		fmt.Printf("%s: %s\n", key, value)
+		log.Printf("%s: %s\n", key, value)
 	})
 	// Extract pros
 	var pros []string
@@ -1025,7 +1025,7 @@ func searchCompany(queryString string) ([]Company, error) {
 	var searchResponse []Company
 	err = json.Unmarshal(body, &searchResponse)
 	if err != nil {
-		fmt.Println(err.Error())
+		log.Println(err.Error())
 		return nil, err
 	}
 
