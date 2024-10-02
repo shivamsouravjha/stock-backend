@@ -61,6 +61,13 @@ type QuarterlyData struct {
 	ROCE             float64
 }
 
+var quartersArr = map[int]string{
+	0: "Mar",
+	1: "Jun",
+	2: "Sep",
+	3: "Dec",
+}
+
 // compareWithPeers calculates a peer comparison score
 func compareWithPeers(stock Stock, peers interface{}) float64 {
 	peerScore := 0.0
@@ -273,6 +280,230 @@ func rateStock(stock map[string]interface{}) float64 {
 	return finalScore
 }
 
+func calculateRoa(netProfit string, totalAssets string) float64 {
+	// Calculate the Return on Assets (ROA) for the current year
+	currentYearRoa := toFloat(netProfit) / toFloat(totalAssets)
+
+	return currentYearRoa
+}
+
+func increaseInRoa(netProfit primitive.A, totalAssets primitive.A) bool {
+	// Calculate the Return on Assets (ROA) for the current year
+	currentYearRoa := calculateRoa(netProfit[len(netProfit)-2].(string), totalAssets[len(totalAssets)-1].(string)) // No TTM in the denominator
+
+	// Calculate the Return on Assets (ROA) for the previous year
+	previousYearRoa := calculateRoa(netProfit[len(netProfit)-3].(string), totalAssets[len(totalAssets)-2].(string)) // No TTM in the denominator
+
+	return currentYearRoa > previousYearRoa
+}
+
+// Helper function to generate the F-Score for a stock
+func generateFScore(stock map[string]interface{}) int {
+	fScore := 0
+	fScore += calculateProfitabilityScore(stock)
+	fScore += calculateLeverageScore(stock)
+	fScore += calculateOperatingEfficiencyScore(stock)
+	return fScore
+}
+
+func calculateProfitabilityScore(stock map[string]interface{}) int {
+	score := 0
+
+	// 1 - Profitability Ratios
+	// 1.1 - Is the ROA (Return on Assets) positive?
+	netProfit := getField(stock, "profitLoss", "Net Profit +")
+	netProfit2 := getNetProfit(stock)
+
+	fmt.Printf("Net Profit 1: %v\n", netProfit)
+	fmt.Printf("Net Profit 2: %v\n", netProfit2)
+	totalAssets := getField(stock, "balanceSheet", "Total Assets")
+	fmt.Printf("Total Assets: %v\n", totalAssets)
+
+	if len(netProfit) > 0 && len(totalAssets) > 0 {
+		roa := calculateRoa(netProfit[len(netProfit)-2].(string), totalAssets[len(totalAssets)-1].(string))
+		if roa > 0 {
+			score++
+		}
+		fmt.Printf("1.1 ROA: %.2f\n", roa)
+	}
+
+	// 1.2 - Positive Cash from Operating Activities in the current year compared to the previous year
+	cashFlowOps := getField(stock, "cashFlows", "Cash from Operating Activity +")
+	fmt.Printf("Cash Flow Ops: %v\n", cashFlowOps)
+	if len(cashFlowOps) > 1 {
+		currentCashFlow := toFloat(cashFlowOps[len(cashFlowOps)-1])
+		previousCashFlow := toFloat(cashFlowOps[len(cashFlowOps)-2])
+		if currentCashFlow > previousCashFlow {
+			score++
+		}
+		fmt.Printf("1.2 Cash Flow Ops: Current %.2f, Previous %.2f\n", currentCashFlow, previousCashFlow)
+	}
+
+	// 1.3 - Positive Return on Assets in the current year compared to the previous year
+	if increaseInRoa(netProfit, totalAssets) {
+		score++
+	}
+	fmt.Printf("1.3 Increase in ROA: %v\n", increaseInRoa(netProfit, totalAssets))
+
+	// 1.4 - Higher Cash from Operating Activities than Net Profit (excluding TTM value)
+	if len(cashFlowOps) > 0 && len(netProfit) > 1 {
+		cashFlow := toFloat(cashFlowOps[len(cashFlowOps)-1])
+		profit := toFloat(netProfit[len(netProfit)-2])
+		if cashFlow > profit {
+			score++
+		}
+		fmt.Printf("1.4 Cash Flow vs Net Profit: Cash Flow %.2f, Net Profit %.2f\n", cashFlow, profit)
+	}
+
+	return score
+}
+
+func calculateLeverageScore(stock map[string]interface{}) int {
+	score := 0
+
+	// 2 - Leverage, Liquidity, and Source of Funds
+	// 2.1 Lower Long-term Debt to Total Assets ratio in the current year compared to the previous year
+	borrowings := getField(stock, "balanceSheet", "Borrowings +")
+	totalAssets := getField(stock, "balanceSheet", "Total Assets")
+	if len(borrowings) > 1 && len(totalAssets) > 1 {
+		currentRatio := toFloat(borrowings[len(borrowings)-1]) / toFloat(totalAssets[len(totalAssets)-1])
+		previousRatio := toFloat(borrowings[len(borrowings)-2]) / toFloat(totalAssets[len(totalAssets)-2])
+		if currentRatio < previousRatio {
+			score++
+		}
+		fmt.Printf("2.1 Debt to Assets Ratio: Current %.2f, Previous %.2f\n", currentRatio, previousRatio)
+	}
+
+	// 2.2 Higher Current Ratio in the current year compared to the previous year
+	otherAssets := getField(stock, "balanceSheet", "Other Assets +")
+	otherLiabilities := getField(stock, "balanceSheet", "Other Liabilities +")
+	if len(otherAssets) > 1 && len(otherLiabilities) > 1 {
+		currentRatio := toFloat(otherAssets[len(otherAssets)-1]) / toFloat(otherLiabilities[len(otherLiabilities)-1])
+		previousRatio := toFloat(otherAssets[len(otherAssets)-2]) / toFloat(otherLiabilities[len(otherLiabilities)-2])
+		if currentRatio > previousRatio {
+			score++
+		}
+		fmt.Printf("2.2 Current Ratio: Current %.2f, Previous %.2f\n", currentRatio, previousRatio)
+	}
+
+	// 2.3 No new shares issued in the last year - assuming Equity Capital is the same as Share Capital
+	equityCapital := getField(stock, "balanceSheet", "Equity Capital")
+	if len(equityCapital) > 1 {
+		currentEquity := toFloat(equityCapital[len(equityCapital)-1])
+		previousEquity := toFloat(equityCapital[len(equityCapital)-2])
+		if currentEquity <= previousEquity {
+			score++
+		}
+		fmt.Printf("2.3 Equity Capital: Current %.2f, Previous %.2f\n", currentEquity, previousEquity)
+	}
+
+	return score
+}
+
+func calculateOperatingEfficiencyScore(stock map[string]interface{}) int {
+	score := 0
+
+	// 3 - Operating Efficiency
+	// 3.1 Higher Gross Margin in the current year compared to the previous year - excluding TTM value
+	opm := getField(stock, "profitLoss", "OPM %")
+	if len(opm) > 2 {
+		currentOpm := toFloat(opm[len(opm)-2])
+		previousOpm := toFloat(opm[len(opm)-3])
+		if currentOpm > previousOpm {
+			score++
+		}
+		fmt.Printf("3.1 OPM: Current %.2f, Previous %.2f\n", currentOpm, previousOpm)
+	}
+
+	// 3.2 Higher Asset Turnover Ratio in the current year compared to the previous year - excluding TTM value for sales
+	sales := getField(stock, "profitLoss", "Sales +")
+	totalAssets := getField(stock, "balanceSheet", "Total Assets")
+	if len(sales) > 2 && len(totalAssets) > 1 {
+		currentRatio := toFloat(sales[len(sales)-2]) / toFloat(totalAssets[len(totalAssets)-1])
+		previousRatio := toFloat(sales[len(sales)-3]) / toFloat(totalAssets[len(totalAssets)-2])
+		if currentRatio > previousRatio {
+			score++
+		}
+		fmt.Printf("3.2 Asset Turnover Ratio: Current %.2f, Previous %.2f\n", currentRatio, previousRatio)
+	}
+
+	return score
+}
+
+// getNetProfit
+func getNetProfit(stock map[string]interface{}) interface{} {
+	if profitLoss, ok := stock["profitLoss"].(bson.M); ok {
+		return returnKey(profitLoss, "Net Profit +")
+	}
+	return 0.0
+}
+
+// Helper function to get a field from a nested map
+func getField(stock map[string]interface{}, path ...string) primitive.A {
+	fmt.Printf("Calling getField with path: %v\n", path)
+	var current bson.M = stock
+
+	for i, key := range path {
+		fmt.Println("Available keys in the map:", getKeys(current))
+
+		fmt.Printf("Processing key: %v\n", key)
+
+		key = strings.TrimSpace(key)
+
+		if i == len(path)-1 {
+			// We're at the last key in the path
+			if result, ok := current[key]; ok {
+				switch v := result.(type) {
+				case primitive.A:
+					fmt.Printf("Found primitive.A for key %v: %v\n", key, v)
+					return v
+				case []interface{}:
+					fmt.Printf("Found []interface{} for key %v, converting to primitive.A\n", key)
+					return primitive.A(v)
+				case nil:
+					fmt.Printf("Value for key %v is nil\n", key)
+					return primitive.A{}
+				default:
+					fmt.Printf("Key %v found, but value is not primitive.A or []interface{}. Actual type: %T\n", key, result)
+					return primitive.A{}
+				}
+			} else {
+				fmt.Printf("Key %v not found in  %v \n", key, current)
+				return primitive.A{}
+			}
+		}
+
+		// Not the last key, so we expect another nested map
+		if result, ok := current[key].(bson.M); ok {
+			current = result
+		} else {
+			fmt.Printf("Expected map for key %v, but got: %T\n", key, current[key])
+			return primitive.A{}
+		}
+	}
+
+	fmt.Println("Path traversal completed without finding a []string value")
+	return primitive.A{}
+}
+
+// Helper function to get all keys from a map
+func getKeys(m map[string]interface{}) []string {
+	keys := []string{}
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+func returnKey(stock map[string]interface{}, key string) interface{} {
+	for k, v := range stock {
+		if k == key {
+			return v
+		}
+	}
+	return nil
+}
+
 // Helper function to normalize strings
 func normalizeString(s string) string {
 	return strings.ToLower(strings.TrimSpace(s))
@@ -318,9 +549,6 @@ func init() {
 		fmt.Println("Pinged your deployment. You successfully connected to MongoDB!")
 
 	})
-
-	return
-
 }
 
 func CORSMiddleware() gin.HandlerFunc {
@@ -551,15 +779,18 @@ func parseXlsxFile(c *gin.Context) {
 						continue
 					}
 
+					fmt.Printf("ResultScore: %v ; Name: %v \n", result["score"], result["name"])
 					// Process based on the score
 					if score, ok := result["score"].(float64); ok {
+						//Very high score -  no need to fetch data of the company
 						if score >= 1 {
 							// fmt.Println("marketCap", result["marketCap"], "name", stockDetail["Name of the Instrument"])
 							stockDetail["marketCapValue"] = result["marketCap"]
 							stockDetail["url"] = result["url"]
 							stockDetail["marketCap"] = getMarketCapCategory(fmt.Sprintf("%v", result["marketCap"]))
 							stockDetail["stockRate"] = rateStock(result)
-						} else {
+							stockDetail["f_score"] = generateFScore(result)
+						} else { // Score less than 1 - fetch data of the company
 							// fmt.Println("score less than 1", score)
 							results, err := searchCompany(instrumentName)
 							if err != nil || len(results) == 0 {
