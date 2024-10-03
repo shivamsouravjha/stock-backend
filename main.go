@@ -29,6 +29,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.uber.org/zap"
 	"gopkg.in/mgo.v2/bson"
 )
 
@@ -349,27 +350,28 @@ func CORSMiddleware() gin.HandlerFunc {
 
 // GracefulShutdown handles graceful shutdown of the server and ticker
 func GracefulShutdown(server *http.Server, ticker *time.Ticker) {
-    stopper := make(chan os.Signal, 1)
-    // Listen for interrupt and SIGTERM signals
-    signal.Notify(stopper, os.Interrupt, syscall.SIGTERM)
+	stopper := make(chan os.Signal, 1)
+	// Listen for interrupt and SIGTERM signals
+	signal.Notify(stopper, os.Interrupt, syscall.SIGTERM)
 
-    go func() {
-        <-stopper
-        fmt.Println("Shutting down gracefully...")
+	go func() {
+		<-stopper
+		zap.L().Info("Shutting down gracefully...")
 
-        // Stop the ticker
-        ticker.Stop()
+		// Stop the ticker
+		ticker.Stop()
 
-        // Create a context with a timeout for shutdown
-        ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-        defer cancel()
+		// Create a context with a timeout for shutdown
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
 
-        // Shut down the server
-        if err := server.Shutdown(ctx); err != nil {
-            log.Fatalf("Server shutdown failed: %+v", err)
-        }
-        fmt.Println("Server exited gracefully")
-    }()
+		// Shut down the server
+		if err := server.Shutdown(ctx); err != nil {
+			zap.L().Error("Server shutdown failed", zap.Error(err))
+			return
+		}
+		zap.L().Info("Server exited gracefully")
+	}()
 }
 
 func checkInstrumentName(input string) bool {
@@ -763,18 +765,18 @@ func main() {
 	}
 
 	// Create a server instance using gin engine as handler
-    server := &http.Server{
-        Addr:    ":" + port,
-        Handler: router,
-    }
+	server := &http.Server{
+		Addr:    ":" + port,
+		Handler: router,
+	}
 
-    // Call GracefulShutdown with the server and ticker
-    GracefulShutdown(server, ticker)
+	// Call GracefulShutdown with the server and ticker
+	GracefulShutdown(server, ticker)
 
-    // Start the server
-    if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-        log.Fatalf("Error starting server: %v", err)
-    }
+	// Start the server
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Fatalf("Error starting server: %v", err)
+	}
 
 }
 
