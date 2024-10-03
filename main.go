@@ -1,17 +1,16 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"math"
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"os/signal"
 	"regexp"
 	"strconv"
@@ -21,11 +20,16 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/cloudinary/cloudinary-go/v2"
+	"github.com/cloudinary/cloudinary-go/v2/api/uploader"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/joho/godotenv"
 	"github.com/xuri/excelize/v2"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.uber.org/zap"
 	"gopkg.in/mgo.v2/bson"
 )
 
@@ -76,7 +80,7 @@ func compareWithPeers(stock Stock, peers interface{}) float64 {
 	if arr, ok := peers.(primitive.A); ok {
 		// Ensure there are enough peers to compare
 		if len(arr) < 2 {
-			fmt.Println("Not enough peers to compare")
+			zap.L().Warn("Not enough peers to compare")
 			return 0.0
 		}
 
@@ -195,18 +199,18 @@ func analyzeTrend(stock Stock, pastData interface{}) float64 {
 	// Ensure pastData is in bson.M format
 	if data, ok := pastData.(bson.M); ok {
 		for _, quarterData := range data {
-			// fmt.Printf("Processing quarter: %s\n", key)
+			// zap.L().Info("Processing quarter", zap.String("quarter", key))
 
 			// Process the quarter data if it's a primitive.A (array of quarter maps)
 			if quarterArray, ok := quarterData.(primitive.A); ok {
 				var prevElem bson.M
 				for i, elem := range quarterArray {
 					if elemMap, ok := elem.(bson.M); ok {
-						// fmt.Printf("Processing quarter element: %v\n", elemMap)
+						// zap.L().Info("Processing quarter element", zap.Any("element", elemMap))
 
 						// Only perform comparisons starting from the second element
 						if i > 0 && prevElem != nil {
-							// fmt.Println("Comparing with previous element")
+							// zap.L().Info("Comparing with previous element", zap.Any("previous", prevElem), zap.Any("current", elemMap))
 
 							// Iterate over the keys in the current quarter and compare with previous quarter
 							for key, v := range elemMap {
@@ -243,13 +247,13 @@ func prosConsAdjustment(stock Stock) float64 {
 
 	// Adjust score based on pros
 	// for _, pro := range stock.Pros {
-	// fmt.Println("Pro: ", pro) // This line is optional, just showing how we could use 'pro'
+	// zap.L().Info("Pro", zap.String("pro", pro)) // This line is optional, just showing how we could use 'pro'
 	adjustment += toFloat(1.0 * len(stock.Pros))
 	// }
 
 	// Adjust score based on cons
 	// for _, con := range stock.Cons {
-	// fmt.Println("Con: ", con) // This line is optional, just showing how we could use 'con'
+	// zap.L().Info("Con", zap.String("con", con)) // This line is optional, just showing how we could use 'con'
 	adjustment -= toFloat(1.0 * len(stock.Cons))
 	// }/
 
@@ -258,7 +262,7 @@ func prosConsAdjustment(stock Stock) float64 {
 
 // rateStock calculates the final stock rating
 func rateStock(stock map[string]interface{}) float64 {
-	// fmt.Println(stock["cons"], "abcd", stock["pros"])
+	// zap.L().Info("Stock data", zap.Any("stock", stock))
 	stockData := Stock{
 		Name:          stock["name"].(string),
 		PE:            toFloat(stock["stockPE"]),
@@ -268,12 +272,12 @@ func rateStock(stock map[string]interface{}) float64 {
 		Cons:          toStringArray(stock["cons"]),
 		Pros:          toStringArray(stock["pros"]),
 	}
-	// fmt.Println(stock["stockPE"])
-	// fmt.Println(stockData)
+	// zap.L().Info("Stock data", zap.Any("stock", stockData))
+	// zap.L().Info("Stock data", zap.Any("stock", stockData))
 	peerComparisonScore := compareWithPeers(stockData, stock["peers"]) * 0.5
 	trendScore := analyzeTrend(stockData, stock["quarterlyResults"]) * 0.4
 	// prosConsScore := prosConsAdjustment(stock) * 0.1
-	// fmt.Println(peerComparisonScore, trendScore)
+	// zap.L().Info("Peer comparison score", zap.Float64("peerComparisonScore", peerComparisonScore))
 
 	finalScore := peerComparisonScore + trendScore
 	finalScore = math.Round(finalScore*100) / 100
@@ -527,11 +531,14 @@ var (
 )
 
 func init() {
-	// fmt.Println("sadlfnml")
+	err := godotenv.Load()
+	if err != nil {
+		log.Println("Error loading .env file")
+	}
 	once.Do(func() {
 		serverAPI := options.ServerAPI(options.ServerAPIVersion1)
 		mongoURI := os.Getenv("MONGO_URI")
-		// fmt.Println(mongoURI)
+		// zap.L().Info("Mongo URI", zap.String("uri", mongoURI))
 		opts := options.Client().ApplyURI(mongoURI).SetServerAPIOptions(serverAPI)
 		// Create a new client and connect to the server
 		var err error
@@ -546,7 +553,7 @@ func init() {
 			panic(err)
 		}
 
-		fmt.Println("Pinged your deployment. You successfully connected to MongoDB!")
+		zap.L().Info("Connected to MongoDB")
 
 	})
 }
@@ -568,15 +575,29 @@ func CORSMiddleware() gin.HandlerFunc {
 	}
 }
 
-func GracefulShutdown() {
+// GracefulShutdown handles graceful shutdown of the server and ticker
+func GracefulShutdown(server *http.Server, ticker *time.Ticker) {
 	stopper := make(chan os.Signal, 1)
-	// listens for interrupt and SIGTERM signal
-	signal.Notify(stopper, os.Interrupt, os.Kill, syscall.SIGKILL, syscall.SIGTERM)
+	// Listen for interrupt and SIGTERM signals
+	signal.Notify(stopper, os.Interrupt, syscall.SIGTERM)
+
 	go func() {
-		select {
-		case <-stopper:
-			os.Exit(0)
+		<-stopper
+		zap.L().Info("Shutting down gracefully...")
+
+		// Stop the ticker
+		ticker.Stop()
+
+		// Create a context with a timeout for shutdown
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		// Shut down the server
+		if err := server.Shutdown(ctx); err != nil {
+			zap.L().Error("Server shutdown failed", zap.Error(err))
+			return
 		}
+		zap.L().Info("Server exited gracefully")
 	}()
 }
 
@@ -611,13 +632,18 @@ func parseXlsxFile(c *gin.Context) {
 	}
 
 	// Retrieve the files from the form
-	files := form.File["files"] // 'files' is the name of the form field for the multiple XLSX files
+	files := form.File["files"]
 	if len(files) == 0 {
 		c.JSON(400, gin.H{"error": "No files found"})
 		return
 	}
 
-	stockDetails := []map[string]interface{}{}
+	// Initialize Cloudinary
+	cld, err := cloudinary.NewFromURL(os.Getenv("CLOUDINARY_URL"))
+	if err != nil {
+		c.JSON(500, gin.H{"error": "Error initializing Cloudinary"})
+		return
+	}
 
 	// Set headers for chunked transfer (if needed)
 	c.Writer.Header().Set("Content-Type", "text/plain")
@@ -629,25 +655,32 @@ func parseXlsxFile(c *gin.Context) {
 		// Open each file for processing
 		file, err := fileHeader.Open()
 		if err != nil {
-			log.Printf("Error opening file %s: %v", fileHeader.Filename, err)
+			zap.L().Error("Error opening file", zap.String("filename", fileHeader.Filename), zap.Error(err))
 			continue
 		}
 		defer file.Close()
 
-		// Read the file content into memory
-		data, err := io.ReadAll(file)
+		// Generate a UUID for the filename
+		uuid := uuid.New().String()
+		cloudinaryFilename := uuid + ".xlsx"
+
+		// Upload file to Cloudinary
+		uploadResult, err := cld.Upload.Upload(c, file, uploader.UploadParams{
+			PublicID: cloudinaryFilename,
+			Folder:   "xlsx_uploads",
+		})
 		if err != nil {
-			log.Printf("Error reading file %s: %v", fileHeader.Filename, err)
+			zap.L().Error("Error uploading file to Cloudinary", zap.String("filename", fileHeader.Filename), zap.Error(err))
 			continue
 		}
 
-		// Create a new reader from the data
-		reader := bytes.NewReader(data)
+		zap.L().Info("File uploaded to Cloudinary", zap.String("filename", fileHeader.Filename), zap.String("url", uploadResult.SecureURL))
 
-		// Parse the file as an XLSX
-		f, err := excelize.OpenReader(reader)
+		// Create a new reader from the uploaded file
+		file.Seek(0, 0) // Reset file pointer to the beginning
+		f, err := excelize.OpenReader(file)
 		if err != nil {
-			log.Printf("Error parsing XLSX file %s: %v", fileHeader.Filename, err)
+			zap.L().Error("Error parsing XLSX file", zap.String("filename", fileHeader.Filename), zap.Error(err))
 			continue
 		}
 		defer f.Close()
@@ -656,12 +689,12 @@ func parseXlsxFile(c *gin.Context) {
 		sheetList := f.GetSheetList()
 		// Loop through the sheets and extract relevant information
 		for _, sheet := range sheetList {
-			fmt.Printf("Processing file: %s, Sheet: %s\n", fileHeader.Filename, sheet)
+			zap.L().Info("Processing file", zap.String("filename", fileHeader.Filename), zap.String("sheet", sheet))
 
 			// Get all the rows in the sheet
 			rows, err := f.GetRows(sheet)
 			if err != nil {
-				log.Printf("Error reading rows from sheet %s: %v", sheet, err)
+				zap.L().Error("Error reading rows from sheet", zap.String("sheet", sheet), zap.Error(err))
 				continue
 			}
 
@@ -698,7 +731,7 @@ func parseXlsxFile(c *gin.Context) {
 									headerMap["Percentage of AUM"] = i
 								}
 							}
-							// fmt.Printf("Header found: %v\n", headerMap)
+							// zap.L().Info("Header found", zap.Any("headerMap", headerMap))
 							break
 						}
 					}
@@ -728,8 +761,6 @@ func parseXlsxFile(c *gin.Context) {
 					if stockDetail["Name of the Instrument"] == nil || stockDetail["Name of the Instrument"] == "" {
 						continue
 					}
-
-					stockDetails = append(stockDetails, stockDetail)
 
 					// Additional processing
 					instrumentName, ok := stockDetail["Name of the Instrument"].(string)
@@ -775,7 +806,7 @@ func parseXlsxFile(c *gin.Context) {
 					var result bson.M
 					err = collection.FindOne(context.TODO(), textSearchFilter, findOptions).Decode(&result)
 					if err != nil {
-						fmt.Println(err)
+						zap.L().Error("Error finding document", zap.Error(err))
 						continue
 					}
 
@@ -784,7 +815,7 @@ func parseXlsxFile(c *gin.Context) {
 					if score, ok := result["score"].(float64); ok {
 						//Very high score -  no need to fetch data of the company
 						if score >= 1 {
-							// fmt.Println("marketCap", result["marketCap"], "name", stockDetail["Name of the Instrument"])
+							// zap.L().Info("marketCap", zap.Any("marketCap", result["marketCap"]), zap.Any("name", stockDetail["Name of the Instrument"]))
 							stockDetail["marketCapValue"] = result["marketCap"]
 							stockDetail["url"] = result["url"]
 							stockDetail["marketCap"] = getMarketCapCategory(fmt.Sprintf("%v", result["marketCap"]))
@@ -792,14 +823,15 @@ func parseXlsxFile(c *gin.Context) {
 							stockDetail["f_score"] = generateFScore(result)
 						} else { // Score less than 1 - fetch data of the company
 							// fmt.Println("score less than 1", score)
+							// zap.L().Info("score less than 1", zap.Float64("score", score))
 							results, err := searchCompany(instrumentName)
 							if err != nil || len(results) == 0 {
-								fmt.Println("No company found:", err)
+								zap.L().Error("No company found", zap.Error(err))
 								continue
 							}
 							data, err := fetchCompanyData(results[0].URL)
 							if err != nil {
-								fmt.Println("Error fetching company data:", err)
+								zap.L().Error("Error fetching company data", zap.Error(err))
 								continue
 							}
 							// Update MongoDB with fetched data
@@ -830,26 +862,26 @@ func parseXlsxFile(c *gin.Context) {
 							filter := bson.M{"name": results[0].Name}
 							_, err = collection.UpdateOne(context.TODO(), filter, update, updateOptions)
 							if err != nil {
-								log.Printf("Failed to update document for company %s: %v\n", results[0].Name, err)
+								zap.L().Error("Failed to update document", zap.Error(err))
 							} else {
-								fmt.Printf("Successfully updated document for company %s.\n", results[0].Name)
+								zap.L().Info("Successfully updated document", zap.String("company", results[0].Name))
 							}
 						}
 					} else {
-						fmt.Println("No score available for", instrumentName)
+						zap.L().Error("No score available for", zap.String("company", instrumentName))
 					}
 
 					// Marshal and write the stockDetail
 					stockDataMarshal, err := json.Marshal(stockDetail)
 					if err != nil {
-						log.Println("Error marshalling data:", err)
+						zap.L().Error("Error marshalling data", zap.Error(err))
 						continue
 					}
 
 					_, err = c.Writer.Write(append(stockDataMarshal, '\n')) // Send each stockDetail as JSON with a newline separator
 
 					if err != nil {
-						log.Println("Error writing data:", err)
+						zap.L().Error("Error writing data", zap.Error(err))
 						break
 					}
 					c.Writer.Flush() // Flush each chunk immediately
@@ -861,6 +893,9 @@ func parseXlsxFile(c *gin.Context) {
 	c.Writer.Flush() // Ensure the final response is sent
 }
 
+func runningServer(c *gin.Context) {
+	c.JSON(200, gin.H{"message": "Server is running"})
+}
 func toFloat(value interface{}) float64 {
 	if str, ok := value.(string); ok {
 		// Remove commas from the string
@@ -873,7 +908,7 @@ func toFloat(value interface{}) float64 {
 			// Convert to float and divide by 100 to get the decimal equivalent
 			f, err := strconv.ParseFloat(cleanStr, 64)
 			if err != nil {
-				fmt.Println("Error converting to float64:", err)
+				zap.L().Error("Error converting to float64", zap.Error(err))
 				return 0.0
 			}
 			return f / 100.0
@@ -882,7 +917,7 @@ func toFloat(value interface{}) float64 {
 		// Parse the cleaned string to float
 		f, err := strconv.ParseFloat(cleanStr, 64)
 		if err != nil {
-			fmt.Println("Error converting to float64:", err)
+			zap.L().Error("Error converting to float64", zap.Error(err))
 			return 0.0
 		}
 		return f
@@ -909,7 +944,7 @@ func getMarketCapCategory(marketCapValue string) string {
 
 	marketCap, err := strconv.ParseFloat(cleanMarketCapValue, 64) // 64-bit float
 	if err != nil {
-		fmt.Println("Failed to convert market cap to integer: %v", err)
+		log.Println("Failed to convert market cap to integer: %v", err)
 	}
 	// Define market cap categories in crore (or billions as per comment)
 	if marketCap >= 20000 {
@@ -923,11 +958,24 @@ func getMarketCapCategory(marketCapValue string) string {
 }
 
 func main() {
+
+	log.Println("MONGO_URI:", os.Getenv("MONGO_URI"))
+	log.Println("CLOUDINARY_URL:", os.Getenv("CLOUDINARY_URL"))
+
 	ticker := time.NewTicker(48 * time.Second)
 
 	go func() {
 		for t := range ticker.C {
-			fmt.Println("Tick at", t)
+			log.Println("Tick at", t)
+			cmd := exec.Command("curl", "https://stock-backend-hz83.onrender.com/api/keepServerRunning")
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				log.Println("Error running curl:", err)
+				return
+			}
+
+			// Print the output of the curl command
+			log.Println("Curl output:", string(output))
 
 		}
 	}()
@@ -939,18 +987,28 @@ func main() {
 
 	{
 		v1.POST("/uploadXlsx", parseXlsxFile)
+		v1.GET("/keepServerRunning", runningServer)
 	}
-	GracefulShutdown()
 
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "4000"
 	}
 
-	err := router.Run(":" + port)
-	if err != nil {
+	// Create a server instance using gin engine as handler
+	server := &http.Server{
+		Addr:    ":" + port,
+		Handler: router,
+	}
+
+	// Call GracefulShutdown with the server and ticker
+	GracefulShutdown(server, ticker)
+
+	// Start the server
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Error starting server: %v", err)
 	}
+
 }
 
 func fetchCompanyData(url string) (map[string]interface{}, error) {
@@ -1006,7 +1064,8 @@ func fetchCompanyData(url string) (map[string]interface{}, error) {
 		companyData[key] = value
 
 		// Print cleaned key-value pairs
-		fmt.Printf("%s: %s\n", key, value)
+		zap.L().Info("Company Data", zap.String("key", key), zap.String("value", value))
+		log.Printf("%s: %s\n", key, value)
 	})
 	// Extract pros
 	var pros []string
@@ -1126,7 +1185,7 @@ func fetchPeerData(dataWarehouseID string) ([]map[string]string, error) {
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := ioutil.ReadAll(resp.Body)
 		bodyString := string(bodyBytes)
-		log.Printf("Received non-200 response code: %d\nResponse body: %s", resp.StatusCode, bodyString)
+		zap.L().Error("Received non-200 response code", zap.Int("status_code", resp.StatusCode), zap.String("body", bodyString))
 		return nil, fmt.Errorf("received non-200 response code from peers API: %d", resp.StatusCode)
 	}
 
@@ -1222,7 +1281,7 @@ func searchCompany(queryString string) ([]Company, error) {
 	var searchResponse []Company
 	err = json.Unmarshal(body, &searchResponse)
 	if err != nil {
-		fmt.Println(err.Error())
+		zap.L().Error("Failed to unmarshal search response", zap.Error(err))
 		return nil, err
 	}
 
