@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"mime/multipart"
 	"os"
+	"stockbackend/clients/http_client"
 	mongo_client "stockbackend/clients/mongo"
 	"stockbackend/utils/constants"
 	"stockbackend/utils/helpers"
@@ -204,7 +205,7 @@ func (fs *fileService) ParseXLSXFile(ctx *gin.Context, files []*multipart.FileHe
 							stockDetail["stockRate"] = helpers.RateStock(result)
 						} else {
 							// zap.L().Info("score less than 1", zap.Float64("score", score))
-							results, err := helpers.SearchCompany(instrumentName)
+							results, err := http_client.SearchCompany(instrumentName)
 							if err != nil || len(results) == 0 {
 								zap.L().Error("No company found", zap.Error(err))
 								continue
