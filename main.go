@@ -347,15 +347,29 @@ func CORSMiddleware() gin.HandlerFunc {
 	}
 }
 
-func GracefulShutdown() {
+// GracefulShutdown handles graceful shutdown of the server and ticker
+func GracefulShutdown(server *http.Server, ticker *time.Ticker) {
 	stopper := make(chan os.Signal, 1)
-	// listens for interrupt and SIGTERM signal
-	signal.Notify(stopper, os.Interrupt, os.Kill, syscall.SIGKILL, syscall.SIGTERM)
+	// Listen for interrupt and SIGTERM signals
+	signal.Notify(stopper, os.Interrupt, syscall.SIGTERM)
+
 	go func() {
-		select {
-		case <-stopper:
-			os.Exit(0)
+		<-stopper
+		zap.L().Info("Shutting down gracefully...")
+
+		// Stop the ticker
+		ticker.Stop()
+
+		// Create a context with a timeout for shutdown
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		// Shut down the server
+		if err := server.Shutdown(ctx); err != nil {
+			zap.L().Error("Server shutdown failed", zap.Error(err))
+			return
 		}
+		zap.L().Info("Server exited gracefully")
 	}()
 }
 
@@ -743,17 +757,26 @@ func main() {
 		v1.POST("/uploadXlsx", parseXlsxFile)
 		v1.GET("/keepServerRunning", runningServer)
 	}
-	GracefulShutdown()
 
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "4000"
 	}
 
-	err := router.Run(":" + port)
-	if err != nil {
+	// Create a server instance using gin engine as handler
+	server := &http.Server{
+		Addr:    ":" + port,
+		Handler: router,
+	}
+
+	// Call GracefulShutdown with the server and ticker
+	GracefulShutdown(server, ticker)
+
+	// Start the server
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatalf("Error starting server: %v", err)
 	}
+
 }
 
 func fetchCompanyData(url string) (map[string]interface{}, error) {
