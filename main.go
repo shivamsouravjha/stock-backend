@@ -79,6 +79,10 @@ func GracefulShutdown(server *http.Server, ticker *time.Ticker) {
 }
 
 func main() {
+	config := zap.NewProductionConfig()
+	config.Level = zap.NewAtomicLevelAt(zap.ErrorLevel)
+	logger, _ := config.Build()
+	zap.ReplaceGlobals(logger)
 
 	err := godotenv.Load()
 	if err != nil {
