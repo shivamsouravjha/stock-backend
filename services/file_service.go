@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"mime/multipart"
 	"os"
 	"stockbackend/clients/http_client"
 	mongo_client "stockbackend/clients/mongo"
@@ -23,24 +22,27 @@ import (
 )
 
 type FileServiceI interface {
-	ParseXLSXFile(ctx *gin.Context, files []*multipart.FileHeader) error
+	ParseXLSXFile(ctx *gin.Context, files <-chan string) error
 }
 
 type fileService struct{}
 
 var FileService FileServiceI = &fileService{}
 
-func (fs *fileService) ParseXLSXFile(ctx *gin.Context, files []*multipart.FileHeader) error {
+func (fs *fileService) ParseXLSXFile(ctx *gin.Context, files <-chan string) error {
 	cld, err := cloudinary.NewFromURL(os.Getenv("CLOUDINARY_URL"))
 	if err != nil {
 		return fmt.Errorf("error initializing Cloudinary: %w", err)
 	}
-	// Iterate over the uploaded XLSX files
-	for _, fileHeader := range files {
-		// Open each file for processing
-		file, err := fileHeader.Open()
+	for filePath := range files {
+		file, err := os.Open(filePath)
 		if err != nil {
-			zap.L().Error("Error opening file", zap.String("filename", fileHeader.Filename), zap.Error(err))
+			zap.L().Error("Error opening file", zap.String("filePath", filePath), zap.Error(err))
+			if err := os.Remove(filePath); err != nil {
+				zap.L().Error("Error removing file", zap.String("filePath", filePath), zap.Error(err))
+			} else {
+				zap.L().Info("File removed successfully", zap.String("filePath", filePath))
+			}
 			continue
 		}
 		defer file.Close()
@@ -55,17 +57,22 @@ func (fs *fileService) ParseXLSXFile(ctx *gin.Context, files []*multipart.FileHe
 			Folder:   "xlsx_uploads",
 		})
 		if err != nil {
-			zap.L().Error("Error uploading file to Cloudinary", zap.String("filename", fileHeader.Filename), zap.Error(err))
+			zap.L().Error("Error uploading file to Cloudinary", zap.String("filePath", filePath), zap.Error(err))
 			continue
 		}
 
-		zap.L().Info("File uploaded to Cloudinary", zap.String("filename", fileHeader.Filename), zap.String("url", uploadResult.SecureURL))
+		zap.L().Info("File uploaded to Cloudinary", zap.String("filePath", filePath), zap.String("url", uploadResult.SecureURL))
 
 		// Create a new reader from the uploaded file
-		file.Seek(0, 0) // Reset file pointer to the beginning
+		file.Seek(0, 0)
 		f, err := excelize.OpenReader(file)
 		if err != nil {
-			zap.L().Error("Error parsing XLSX file", zap.String("filename", fileHeader.Filename), zap.Error(err))
+			zap.L().Error("Error parsing XLSX file", zap.String("filePath", filePath), zap.Error(err))
+			if err := os.Remove(filePath); err != nil {
+				zap.L().Error("Error removing file", zap.String("filePath", filePath), zap.Error(err))
+			} else {
+				zap.L().Info("File removed successfully", zap.String("filePath", filePath))
+			}
 			continue
 		}
 		defer f.Close()
@@ -74,7 +81,7 @@ func (fs *fileService) ParseXLSXFile(ctx *gin.Context, files []*multipart.FileHe
 		sheetList := f.GetSheetList()
 		// Loop through the sheets and extract relevant information
 		for _, sheet := range sheetList {
-			zap.L().Info("Processing file", zap.String("filename", fileHeader.Filename), zap.String("sheet", sheet))
+			zap.L().Info("Processing file", zap.String("filePath", filePath), zap.String("sheet", sheet))
 
 			// Get all the rows in the sheet
 			rows, err := f.GetRows(sheet)
@@ -268,6 +275,11 @@ func (fs *fileService) ParseXLSXFile(ctx *gin.Context, files []*multipart.FileHe
 					ctx.Writer.Flush() // Flush each chunk immediately
 				}
 			}
+		}
+		if err := os.Remove(filePath); err != nil {
+			zap.L().Error("Error removing file", zap.String("filePath", filePath), zap.Error(err))
+		} else {
+			zap.L().Info("File removed successfully", zap.String("filePath", filePath))
 		}
 	}
 
