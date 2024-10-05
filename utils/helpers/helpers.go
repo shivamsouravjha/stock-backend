@@ -672,12 +672,10 @@ func calculateProfitabilityScore(stock map[string]interface{}) int {
 	// 1.1 - Is the ROA (Return on Assets) positive?
 	netProfit, err := getNestedArrayField(stock, "profitLoss", "Net Profit +")
 	if err != nil {
-		fmt.Printf("Error getting net profit for stock %v: %v\n", stock["name"], err)
 		return -1
 	}
 	totalAssets, err := getNestedArrayField(stock, "balanceSheet", "Total Assets")
 	if err != nil {
-		fmt.Printf("Error getting total assets for stock %v: %v\n", stock["name"], err)
 		return -1
 	}
 
@@ -691,7 +689,6 @@ func calculateProfitabilityScore(stock map[string]interface{}) int {
 	// 1.2 - Positive Cash from Operating Activities in the current year compared to the previous year
 	cashFlowOps, err := getNestedArrayField(stock, "cashFlows", "Cash from Operating Activity +")
 	if err != nil {
-		fmt.Printf("Error getting cash from operating activities for stock %v: %v\n", stock["name"], err)
 		return -1
 	}
 
@@ -727,12 +724,10 @@ func calculateLeverageScore(stock map[string]interface{}) int {
 	// 2.1 Lower Long-term Debt to Total Assets ratio in the current year compared to the previous year
 	borrowings, err := getNestedArrayField(stock, "balanceSheet", "Borrowings +")
 	if err != nil {
-		fmt.Printf("Error getting borrowings for stock %v: %v\n", stock["name"], err)
 		return -1
 	}
 	totalAssets, err := getNestedArrayField(stock, "balanceSheet", "Total Assets")
 	if err != nil {
-		fmt.Printf("Error getting total assets for stock %v: %v\n", stock["name"], err)
 		return -1
 	}
 	if len(borrowings) > 1 && len(totalAssets) > 1 {
@@ -746,13 +741,11 @@ func calculateLeverageScore(stock map[string]interface{}) int {
 	// 2.2 Higher Current Ratio in the current year compared to the previous year
 	otherAssets, err := getNestedArrayField(stock, "balanceSheet", "Other Assets +")
 	if err != nil {
-		fmt.Printf("Error getting other assets for stock %v: %v\n", stock["name"], err)
 		return -1
 	}
 
 	otherLiabilities, err := getNestedArrayField(stock, "balanceSheet", "Other Liabilities +")
 	if err != nil {
-		fmt.Printf("Error getting other liabilities for stock %v: %v\n", stock["name"], err)
 		return -1
 	}
 
@@ -767,7 +760,6 @@ func calculateLeverageScore(stock map[string]interface{}) int {
 	// 2.3 No new shares issued in the last year - assuming Equity Capital is the same as Share Capital
 	equityCapital, err := getNestedArrayField(stock, "balanceSheet", "Equity Capital")
 	if err != nil {
-		fmt.Printf("Error getting equity capital for stock %v: %v\n", stock["name"], err)
 		return -1
 	}
 
@@ -789,17 +781,14 @@ func calculateOperatingEfficiencyScore(stock map[string]interface{}) int {
 	// 3.1 Higher Gross Margin in the current year compared to the previous year - excluding TTM value
 	opm, err := getNestedArrayField(stock, "profitLoss", "OPM %")
 	if err != nil {
-		fmt.Printf("Error getting OPM for stock %v: %v\n", stock["name"], err)
 		// For Banks and Financial Institutions, OPM may not be available - we'll resort to Net Margin in such cases
 		// Net Margin = Net Profit / Revenue (Revenue in case of banks)
 		netProfit, err := getNestedArrayField(stock, "profitLoss", "Net Profit +")
 		if err != nil {
-			fmt.Printf("Error getting net profit for stock %v: %v\n", stock["name"], err)
 			return -1
 		}
 		totalRevenue, err := getNestedArrayField(stock, "profitLoss", "Revenue")
 		if err != nil {
-			fmt.Printf("Error getting total revenue for stock %v: %v\n", stock["name"], err)
 			return -1
 		}
 
@@ -826,11 +815,9 @@ func calculateOperatingEfficiencyScore(stock map[string]interface{}) int {
 	// 3.2 Higher Asset Turnover Ratio in the current year compared to the previous year - excluding TTM value for sales
 	sales, err := getNestedArrayField(stock, "profitLoss", "Sales +")
 	if err != nil {
-		fmt.Printf("Error getting sales for stock %v: %v\n", stock["name"], err)
 		// For Banks and Financial Institutions, we can use Revenue instead of Sales
 		revenue, err := getNestedArrayField(stock, "profitLoss", "Revenue")
 		if err != nil {
-			fmt.Printf("Error getting revenue for stock %v: %v\n", stock["name"], err)
 			return -1
 		} else {
 			sales = revenue
@@ -839,7 +826,6 @@ func calculateOperatingEfficiencyScore(stock map[string]interface{}) int {
 
 	totalAssets, err := getNestedArrayField(stock, "balanceSheet", "Total Assets")
 	if err != nil {
-		fmt.Printf("Error getting total assets for stock %v: %v\n", stock["name"], err)
 		return -1
 	}
 
