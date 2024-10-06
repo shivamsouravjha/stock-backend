@@ -15,12 +15,16 @@ var (
 )
 
 func init() {
+	zap.L().Info("MONGO_URI: ", zap.String("uri", os.Getenv("MONGO_URI")))
+	zap.L().Info("CLOUDINARY_URL", zap.String("uri", os.Getenv("CLOUDINARY_URL")))
+
 	serverAPI := options.ServerAPI(options.ServerAPIVersion1)
 	mongoURI := os.Getenv("MONGO_URI")
 	// zap.L().Info("Mongo URI", zap.String("uri", mongoURI))
 	opts := options.Client().ApplyURI(mongoURI).SetServerAPIOptions(serverAPI)
+
 	// Create a new client and connect to the server
-	var err error
+	var err error // This is to ensure Client is not redeclared in the local scope
 	Client, err = mongo.Connect(context.TODO(), opts)
 	if err != nil {
 		panic(err)

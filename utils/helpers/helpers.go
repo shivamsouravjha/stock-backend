@@ -1,6 +1,7 @@
 package helpers
 
 import (
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -620,4 +621,270 @@ func FetchCompanyData(url string) (map[string]interface{}, error) {
 		companyData["cashFlows"] = ParseTableData(cashFlowsSection, "div[data-result-table]")
 	}
 	return companyData, nil
+}
+
+func calculateRoa(netProfit string, totalAssets string) float64 {
+	// Calculate the Return on Assets (ROA) for the current year
+	currentYearRoa := ToFloat(netProfit) / ToFloat(totalAssets)
+
+	return currentYearRoa
+}
+
+func increaseInRoa(netProfit primitive.A, totalAssets primitive.A) bool {
+	// Calculate the Return on Assets (ROA) for the current year
+	currentYearRoa := calculateRoa(netProfit[len(netProfit)-2].(string), totalAssets[len(totalAssets)-1].(string)) // No TTM in the denominator
+
+	// Calculate the Return on Assets (ROA) for the previous year
+	previousYearRoa := calculateRoa(netProfit[len(netProfit)-3].(string), totalAssets[len(totalAssets)-2].(string)) // No TTM in the denominator
+
+	return currentYearRoa > previousYearRoa
+}
+
+// Helper function to generate the F-Score for a stock
+func GenerateFScore(stock map[string]interface{}) int {
+	fScore := 0
+
+	profitablityScore := calculateProfitabilityScore(stock)
+	if profitablityScore < 0 {
+		return -1
+	}
+	fScore += profitablityScore
+
+	leverageScore := calculateLeverageScore(stock)
+	if leverageScore < 0 {
+		return -1
+	}
+	fScore += leverageScore
+
+	operatingEfficiencyScore := calculateOperatingEfficiencyScore(stock)
+	if operatingEfficiencyScore < 0 {
+		return -1
+	}
+	fScore += operatingEfficiencyScore
+
+	return fScore
+}
+
+func calculateProfitabilityScore(stock map[string]interface{}) int {
+	score := 0
+
+	// 1 - Profitability Ratios
+	// 1.1 - Is the ROA (Return on Assets) positive?
+	netProfit, err := getNestedArrayField(stock, "profitLoss", "Net Profit +")
+	if err != nil {
+		return -1
+	}
+	totalAssets, err := getNestedArrayField(stock, "balanceSheet", "Total Assets")
+	if err != nil {
+		return -1
+	}
+
+	if len(netProfit) > 0 && len(totalAssets) > 0 {
+		roa := calculateRoa(netProfit[len(netProfit)-2].(string), totalAssets[len(totalAssets)-1].(string))
+		if roa > 0 {
+			score++
+		}
+	}
+
+	// 1.2 - Positive Cash from Operating Activities in the current year compared to the previous year
+	cashFlowOps, err := getNestedArrayField(stock, "cashFlows", "Cash from Operating Activity +")
+	if err != nil {
+		return -1
+	}
+
+	if len(cashFlowOps) > 1 {
+		currentCashFlow := ToFloat(cashFlowOps[len(cashFlowOps)-1])
+		previousCashFlow := ToFloat(cashFlowOps[len(cashFlowOps)-2])
+		if currentCashFlow > previousCashFlow {
+			score++
+		}
+	}
+
+	// 1.3 - Positive Return on Assets in the current year compared to the previous year
+	if increaseInRoa(netProfit, totalAssets) {
+		score++
+	}
+
+	// 1.4 - Higher Cash from Operating Activities than Net Profit (excluding TTM value)
+	if len(cashFlowOps) > 0 && len(netProfit) > 1 {
+		cashFlow := ToFloat(cashFlowOps[len(cashFlowOps)-1])
+		profit := ToFloat(netProfit[len(netProfit)-2])
+		if cashFlow > profit {
+			score++
+		}
+	}
+
+	return score
+}
+
+func calculateLeverageScore(stock map[string]interface{}) int {
+	score := 0
+
+	// 2 - Leverage, Liquidity, and Source of Funds
+	// 2.1 Lower Long-term Debt to Total Assets ratio in the current year compared to the previous year
+	borrowings, err := getNestedArrayField(stock, "balanceSheet", "Borrowings +")
+	if err != nil {
+		return -1
+	}
+	totalAssets, err := getNestedArrayField(stock, "balanceSheet", "Total Assets")
+	if err != nil {
+		return -1
+	}
+	if len(borrowings) > 1 && len(totalAssets) > 1 {
+		currentRatio := ToFloat(borrowings[len(borrowings)-1]) / ToFloat(totalAssets[len(totalAssets)-1])
+		previousRatio := ToFloat(borrowings[len(borrowings)-2]) / ToFloat(totalAssets[len(totalAssets)-2])
+		if currentRatio <= previousRatio {
+			score++
+		}
+	}
+
+	// 2.2 Higher Current Ratio in the current year compared to the previous year
+	otherAssets, err := getNestedArrayField(stock, "balanceSheet", "Other Assets +")
+	if err != nil {
+		return -1
+	}
+
+	otherLiabilities, err := getNestedArrayField(stock, "balanceSheet", "Other Liabilities +")
+	if err != nil {
+		return -1
+	}
+
+	if len(otherAssets) > 1 && len(otherLiabilities) > 1 {
+		currentRatio := ToFloat(otherAssets[len(otherAssets)-1]) / ToFloat(otherLiabilities[len(otherLiabilities)-1])
+		previousRatio := ToFloat(otherAssets[len(otherAssets)-2]) / ToFloat(otherLiabilities[len(otherLiabilities)-2])
+		if currentRatio > previousRatio {
+			score++
+		}
+	}
+
+	// 2.3 No new shares issued in the last year - assuming Equity Capital is the same as Share Capital
+	equityCapital, err := getNestedArrayField(stock, "balanceSheet", "Equity Capital")
+	if err != nil {
+		return -1
+	}
+
+	if len(equityCapital) > 1 {
+		currentEquity := ToFloat(equityCapital[len(equityCapital)-1])
+		previousEquity := ToFloat(equityCapital[len(equityCapital)-2])
+		if currentEquity <= previousEquity {
+			score++
+		}
+	}
+
+	return score
+}
+
+func calculateOperatingEfficiencyScore(stock map[string]interface{}) int {
+	score := 0
+
+	// 3 - Operating Efficiency
+	// 3.1 Higher Gross Margin in the current year compared to the previous year - excluding TTM value
+	opm, err := getNestedArrayField(stock, "profitLoss", "OPM %")
+	if err != nil {
+		// For Banks and Financial Institutions, OPM may not be available - we'll resort to Net Margin in such cases
+		// Net Margin = Net Profit / Revenue (Revenue in case of banks)
+		netProfit, err := getNestedArrayField(stock, "profitLoss", "Net Profit +")
+		if err != nil {
+			return -1
+		}
+		totalRevenue, err := getNestedArrayField(stock, "profitLoss", "Revenue")
+		if err != nil {
+			return -1
+		}
+
+		// exclude TTM value
+		if len(netProfit) > 2 && len(totalRevenue) > 2 {
+			currentMargin := ToFloat(netProfit[len(netProfit)-2]) / ToFloat(totalRevenue[len(totalRevenue)-2])
+			previousMargin := ToFloat(netProfit[len(netProfit)-3]) / ToFloat(totalRevenue[len(totalRevenue)-3])
+			if currentMargin > previousMargin {
+				score++
+			}
+		} else {
+			return -1
+		}
+	}
+
+	if len(opm) > 2 {
+		currentOpm := ToFloat(opm[len(opm)-2])
+		previousOpm := ToFloat(opm[len(opm)-3])
+		if currentOpm > previousOpm {
+			score++
+		}
+	}
+
+	// 3.2 Higher Asset Turnover Ratio in the current year compared to the previous year - excluding TTM value for sales
+	sales, err := getNestedArrayField(stock, "profitLoss", "Sales +")
+	if err != nil {
+		// For Banks and Financial Institutions, we can use Revenue instead of Sales
+		revenue, err := getNestedArrayField(stock, "profitLoss", "Revenue")
+		if err != nil {
+			return -1
+		} else {
+			sales = revenue
+		}
+	}
+
+	totalAssets, err := getNestedArrayField(stock, "balanceSheet", "Total Assets")
+	if err != nil {
+		return -1
+	}
+
+	// exclude TTM value for sales/revenue
+	if len(sales) > 2 && len(totalAssets) > 1 {
+		currentAssetTurnoverRatio := ToFloat(sales[len(sales)-2]) / ToFloat(totalAssets[len(totalAssets)-1])
+		previousAssetTurnoverRatio := ToFloat(sales[len(sales)-3]) / ToFloat(totalAssets[len(totalAssets)-2])
+		if currentAssetTurnoverRatio > previousAssetTurnoverRatio {
+			score++
+		}
+	}
+
+	return score
+}
+
+func checkArrayElementsAreString(arr primitive.A) (primitive.A, error) {
+	for _, elem := range arr {
+		// Check if the element is a string
+		_, ok := elem.(string)
+		if !ok {
+			return primitive.A{}, errors.New("array contains non-string elements")
+		}
+	}
+
+	// If all elements are strings, return the original array
+	return arr, nil
+}
+
+// Helper function to get an array field from a nested map
+func getNestedArrayField(stock map[string]interface{}, path ...string) (primitive.A, error) {
+	var current bson.M = stock
+
+	for i, key := range path {
+		key = strings.TrimSpace(key)
+
+		// Replace " +" with a non-breaking space and plus sign
+		if strings.Contains(key, "+") {
+			key = strings.ReplaceAll(key, " +", "\u00A0+")
+		}
+
+		// If we're at the last key in the path
+		if i == len(path)-1 {
+			result, ok := current[key].(primitive.A)
+
+			if !ok {
+				// Return an empty array if the field is not an array
+				return primitive.A{}, errors.New("field not found")
+			}
+
+			return checkArrayElementsAreString(result)
+		}
+
+		// Expect another nested map for intermediate keys
+		if result, ok := current[key].(bson.M); ok {
+			current = result
+		} else {
+			return primitive.A{}, errors.New("field not found")
+		}
+	}
+
+	return primitive.A{}, errors.New("field not found")
 }

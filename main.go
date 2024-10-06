@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/joho/godotenv"
 	"go.uber.org/zap"
 )
 
@@ -83,14 +82,6 @@ func main() {
 	config.Level = zap.NewAtomicLevelAt(zap.ErrorLevel)
 	logger, _ := config.Build()
 	zap.ReplaceGlobals(logger)
-
-	err := godotenv.Load()
-	if err != nil {
-		log.Println("Error loading .env file")
-	}
-
-	log.Println("MONGO_URI:", os.Getenv("MONGO_URI"))
-	log.Println("CLOUDINARY_URL:", os.Getenv("CLOUDINARY_URL"))
 
 	router := gin.New()
 	router.Use(CORSMiddleware())
