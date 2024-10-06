@@ -2,7 +2,6 @@ package mongo_client
 
 import (
 	"context"
-	"log"
 	"os"
 
 	"go.mongodb.org/mongo-driver/mongo"
@@ -16,8 +15,8 @@ var (
 )
 
 func init() {
-	log.Println("MONGO_URI:", os.Getenv("MONGO_URI"))
-	log.Println("CLOUDINARY_URL:", os.Getenv("CLOUDINARY_URL"))
+	zap.L().Info("MONGO_URI: ", zap.String("uri", os.Getenv("MONGO_URI")))
+	zap.L().Info("CLOUDINARY_URL", zap.String("uri", os.Getenv("CLOUDINARY_URL")))
 
 	serverAPI := options.ServerAPI(options.ServerAPIVersion1)
 	mongoURI := os.Getenv("MONGO_URI")
@@ -25,7 +24,8 @@ func init() {
 	opts := options.Client().ApplyURI(mongoURI).SetServerAPIOptions(serverAPI)
 
 	// Create a new client and connect to the server
-	Client, err := mongo.Connect(context.TODO(), opts)
+	var err error // This is to ensure Client is not redeclared in the local scope
+	Client, err = mongo.Connect(context.TODO(), opts)
 	if err != nil {
 		panic(err)
 	}
