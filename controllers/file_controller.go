@@ -1,6 +1,9 @@
 package controllers
 
 import (
+	"io"
+	"os"
+	"path/filepath"
 	"stockbackend/services"
 
 	"github.com/gin-gonic/gin"
@@ -29,12 +32,45 @@ func (f *fileController) ParseXLSXFile(ctx *gin.Context) {
 		return
 	}
 
+	uploadDir := "./uploads"
+	if err := os.MkdirAll(uploadDir, os.ModePerm); err != nil {
+		ctx.JSON(500, gin.H{"error": "Error creating upload directory"})
+		return
+	}
+	var savedFilePaths = make(chan string, len(files))
+	for _, file := range files {
+		src, err := file.Open()
+		if err != nil {
+			ctx.JSON(500, gin.H{"error": "Error opening file"})
+			return
+		}
+		defer src.Close()
+
+		filename := filepath.Base(file.Filename)
+		savePath := filepath.Join(uploadDir, filename)
+
+		dst, err := os.Create(savePath)
+		if err != nil {
+			ctx.JSON(500, gin.H{"error": "Error creating file on server"})
+			return
+		}
+		defer dst.Close()
+
+		if _, err := io.Copy(dst, src); err != nil {
+			ctx.JSON(500, gin.H{"error": "Error saving file"})
+			return
+		}
+
+		savedFilePaths <- savePath
+	}
+	close(savedFilePaths)
+
 	// Set headers for chunked transfer (if needed)
 	ctx.Writer.Header().Set("Content-Type", "text/plain")
 	ctx.Writer.Header().Set("Cache-Control", "no-cache")
 	ctx.Writer.Header().Set("Connection", "keep-alive")
 
-	err = services.FileService.ParseXLSXFile(ctx, files)
+	err = services.FileService.ParseXLSXFile(ctx, savedFilePaths)
 	if err != nil {
 		ctx.JSON(500, gin.H{"error": err.Error()})
 		return
