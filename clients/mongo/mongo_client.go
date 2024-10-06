@@ -5,7 +5,6 @@ import (
 	"log"
 	"os"
 
-	"github.com/joho/godotenv"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.uber.org/zap"
@@ -17,12 +16,6 @@ var (
 )
 
 func init() {
-	// Load environment variables from .env file
-	err := godotenv.Load()
-	if err != nil {
-		log.Println("Error loading .env file")
-	}
-
 	log.Println("MONGO_URI:", os.Getenv("MONGO_URI"))
 	log.Println("CLOUDINARY_URL:", os.Getenv("CLOUDINARY_URL"))
 
@@ -32,7 +25,7 @@ func init() {
 	opts := options.Client().ApplyURI(mongoURI).SetServerAPIOptions(serverAPI)
 
 	// Create a new client and connect to the server
-	Client, err = mongo.Connect(context.TODO(), opts)
+	Client, err := mongo.Connect(context.TODO(), opts)
 	if err != nil {
 		panic(err)
 	}
