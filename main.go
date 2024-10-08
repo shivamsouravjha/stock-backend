@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -97,7 +96,7 @@ func setupSentry() {
 		// Sentry recommend adjusting this value in production,
 		TracesSampleRate: tracesSampleRate, // 1.0 by default if ENV SENTRY_SAMPLE_RATE not set
 	}); err != nil {
-		fmt.Printf("Sentry initialization failed: %v\n", err)
+		log.Printf("Sentry initialization failed: %v\n", err)
 	}
 }
 
