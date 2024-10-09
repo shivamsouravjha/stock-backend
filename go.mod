@@ -5,6 +5,7 @@ go 1.23.0
 require (
 	github.com/PuerkitoBio/goquery v1.10.0
 	github.com/cloudinary/cloudinary-go/v2 v2.9.0
+	github.com/getsentry/sentry-go v0.29.0
 	github.com/gin-gonic/gin v1.10.0
 	github.com/google/uuid v1.6.0
 	github.com/xuri/excelize/v2 v2.8.1
@@ -31,7 +32,7 @@ require (
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/gorilla/schema v1.4.1 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.13.6 // indirect
+	github.com/klauspost/compress v1.17.7 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.7 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
@@ -57,6 +58,5 @@ require (
 	golang.org/x/sys v0.25.0 // indirect
 	golang.org/x/text v0.18.0 // indirect
 	google.golang.org/protobuf v1.34.1 // indirect
-	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

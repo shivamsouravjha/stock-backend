@@ -1,11 +1,13 @@
 package controllers
 
 import (
+	"context"
 	"io"
 	"os"
 	"path/filepath"
 	"stockbackend/services"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 )
 
@@ -18,9 +20,20 @@ type fileController struct{}
 var FileController FileControllerI = &fileController{}
 
 func (f *fileController) ParseXLSXFile(ctx *gin.Context) {
+	defer sentry.Recover()
+	transaction := sentry.TransactionFromContext(ctx)
+	if transaction != nil {
+		transaction.Name = "ParseXLSXFile"
+	}
+
+	span := sentry.StartSpan(context.TODO(), "ParseXLSXFile")
+	defer span.Finish()
+
 	// Parse the form and retrieve the uploaded files
 	form, err := ctx.MultipartForm()
 	if err != nil {
+		span.Status = sentry.SpanStatusFailedPrecondition
+		sentry.CaptureException(err)
 		ctx.JSON(400, gin.H{"error": "Error parsing form data"})
 		return
 	}
@@ -34,6 +47,8 @@ func (f *fileController) ParseXLSXFile(ctx *gin.Context) {
 
 	uploadDir := "./uploads"
 	if err := os.MkdirAll(uploadDir, os.ModePerm); err != nil {
+		span.Status = sentry.SpanStatusFailedPrecondition
+		sentry.CaptureException(err)
 		ctx.JSON(500, gin.H{"error": "Error creating upload directory"})
 		return
 	}
@@ -41,6 +56,8 @@ func (f *fileController) ParseXLSXFile(ctx *gin.Context) {
 	for _, file := range files {
 		src, err := file.Open()
 		if err != nil {
+			span.Status = sentry.SpanStatusFailedPrecondition
+			sentry.CaptureException(err)
 			ctx.JSON(500, gin.H{"error": "Error opening file"})
 			return
 		}
@@ -51,12 +68,16 @@ func (f *fileController) ParseXLSXFile(ctx *gin.Context) {
 
 		dst, err := os.Create(savePath)
 		if err != nil {
+			span.Status = sentry.SpanStatusFailedPrecondition
+			sentry.CaptureException(err)
 			ctx.JSON(500, gin.H{"error": "Error creating file on server"})
 			return
 		}
 		defer dst.Close()
 
 		if _, err := io.Copy(dst, src); err != nil {
+			span.Status = sentry.SpanStatusFailedPrecondition
+			sentry.CaptureException(err)
 			ctx.JSON(500, gin.H{"error": "Error saving file"})
 			return
 		}
@@ -72,10 +93,13 @@ func (f *fileController) ParseXLSXFile(ctx *gin.Context) {
 
 	err = services.FileService.ParseXLSXFile(ctx, savedFilePaths)
 	if err != nil {
+		span.Status = sentry.SpanStatusFailedPrecondition
+		sentry.CaptureException(err)
 		ctx.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
 
+	span.Status = sentry.SpanStatusOK
 	ctx.Writer.Write([]byte("\nStream complete.\n"))
 	ctx.Writer.Flush() // Ensure the final response is sent
 }

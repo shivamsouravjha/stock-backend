@@ -8,9 +8,12 @@ import (
 	"os/exec"
 	"os/signal"
 	"stockbackend/routes"
+	"strconv"
 	"syscall"
 	"time"
 
+	"github.com/getsentry/sentry-go"
+	sentrygin "github.com/getsentry/sentry-go/gin"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
@@ -77,13 +80,36 @@ func GracefulShutdown(server *http.Server, ticker *time.Ticker) {
 	}()
 }
 
+func setupSentry() {
+	tracesSampleRate, err := strconv.ParseFloat(os.Getenv("SENTRY_SAMPLE_RATE"), 64)
+	if err != nil {
+		tracesSampleRate = 1.0
+	}
+
+	if err := sentry.Init(sentry.ClientOptions{
+		Dsn:           os.Getenv("SENTRY_DSN"),
+		Environment:   os.Getenv("ENVIRONMENT"),
+		EnableTracing: true,
+		Debug:         true,
+		// Set TracesSampleRate to 1.0 to capture 100%
+		// of transactions for tracing.
+		// Sentry recommend adjusting this value in production,
+		TracesSampleRate: tracesSampleRate, // 1.0 by default if ENV SENTRY_SAMPLE_RATE not set
+	}); err != nil {
+		log.Printf("Sentry initialization failed: %v\n", err)
+	}
+}
+
 func main() {
 	config := zap.NewProductionConfig()
 	config.Level = zap.NewAtomicLevelAt(zap.ErrorLevel)
 	logger, _ := config.Build()
 	zap.ReplaceGlobals(logger)
 
+	setupSentry()
+
 	router := gin.New()
+	router.Use(sentrygin.New(sentrygin.Options{}))
 	router.Use(CORSMiddleware())
 
 	ticker := startTicker()

@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -55,13 +57,24 @@ type gmailController struct{}
 
 var GmailController GmailControllerI = &gmailController{}
 
-func (g *gmailController) GetEmails(c *gin.Context) {
-	accessToken := c.PostForm("token")
+func (g *gmailController) GetEmails(ctx *gin.Context) {
+	defer sentry.Recover()
+	transaction := sentry.TransactionFromContext(ctx)
+	if transaction != nil {
+		transaction.Name = "GetEmails"
+	}
+
+	sentrySpan := sentry.StartSpan(context.TODO(), "GetEmails")
+	defer sentrySpan.Finish()
+
+	accessToken := ctx.PostForm("token")
 	url := "https://gmail.googleapis.com/gmail/v1/users/me/messages?q=portfolio+disclosure"
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Error creating request: %v", err)})
+		sentrySpan.Status = sentry.SpanStatusFailedPrecondition
+		sentry.CaptureException(err)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Error creating request: %v", err)})
 		return
 	}
 
@@ -70,25 +83,33 @@ func (g *gmailController) GetEmails(c *gin.Context) {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Error sending request: %v", err)})
+		sentrySpan.Status = sentry.SpanStatusFailedPrecondition
+		sentry.CaptureException(err)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Error sending request: %v", err)})
 		return
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Error reading response body: %v", err)})
+		sentrySpan.Status = sentry.SpanStatusFailedPrecondition
+		sentry.CaptureException(err)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Error reading response body: %v", err)})
 		return
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("API returned status code: %d, body: %s", resp.StatusCode, string(body))})
+		sentrySpan.Status = sentry.SpanStatusFailedPrecondition
+		sentry.CaptureException(err)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("API returned status code: %d, body: %s", resp.StatusCode, string(body))})
 		return
 	}
 
 	var emailList EmailList
 	if err := json.Unmarshal(body, &emailList); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Error parsing JSON: %v", err)})
+		sentrySpan.Status = sentry.SpanStatusFailedPrecondition
+		sentry.CaptureException(err)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Error parsing JSON: %v", err)})
 		return
 	}
 
@@ -100,7 +121,7 @@ func (g *gmailController) GetEmails(c *gin.Context) {
 		wg.Add(1)
 		go func(messageID string) {
 			defer wg.Done()
-			fetchEmailDetails(accessToken, messageID, fileList, &wg)
+			fetchEmailDetails(accessToken, messageID, fileList, &wg, &sentrySpan)
 		}(msg.ID)
 	}
 
@@ -111,20 +132,24 @@ func (g *gmailController) GetEmails(c *gin.Context) {
 	}()
 
 	// Process XLSX files
-	err = services.FileService.ParseXLSXFile(c, fileList)
+	err = services.FileService.ParseXLSXFile(ctx, fileList)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		sentrySpan.Status = sentry.SpanStatusFailedPrecondition
+		sentry.CaptureException(err)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"status": "Files processed successfully"})
+	ctx.JSON(http.StatusOK, gin.H{"status": "Files processed successfully"})
 }
 
-func fetchEmailDetails(accessToken, emailID string, fileList chan<- string, wg *sync.WaitGroup) {
+func fetchEmailDetails(accessToken, emailID string, fileList chan<- string, wg *sync.WaitGroup, sentrySpan *sentry.Span) {
 	url := "https://gmail.googleapis.com/gmail/v1/users/me/messages/" + emailID
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
+		sentrySpan.Status = sentry.SpanStatusFailedPrecondition
+		sentry.CaptureException(err)
 		zap.L().Error("Error creating request: %v", zap.Error(err))
 		return
 	}
@@ -141,12 +166,16 @@ func fetchEmailDetails(accessToken, emailID string, fileList chan<- string, wg *
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
+		sentrySpan.Status = sentry.SpanStatusFailedPrecondition
+		sentry.CaptureException(err)
 		zap.L().Error("Error reading response body: %v", zap.Error(err))
 		return
 	}
 
 	var emailDetails EmailDetails
 	if err := json.Unmarshal(body, &emailDetails); err != nil {
+		sentrySpan.Status = sentry.SpanStatusFailedPrecondition
+		sentry.CaptureException(err)
 		zap.L().Error("Error parsing JSON: %v", zap.Error(err))
 		return
 	}
@@ -159,25 +188,27 @@ func fetchEmailDetails(accessToken, emailID string, fileList chan<- string, wg *
 
 	for _, part := range emailDetails.Payload.Parts {
 		if part.MimeType == "text/plain" || part.MimeType == "text/html" {
-			emailBody := decodeBase64URL(part.Body.Data)
-			findXLSXLinks(emailBody, fileList, wg)
+			emailBody := decodeBase64URL(part.Body.Data, sentrySpan)
+			findXLSXLinks(emailBody, fileList, wg, sentrySpan)
 		}
 	}
 }
 
 // Helper function to decode Base64URL encoded email content
-func decodeBase64URL(data string) string {
+func decodeBase64URL(data string, sentrySpan *sentry.Span) string {
 	data = strings.ReplaceAll(data, "-", "+")
 	data = strings.ReplaceAll(data, "_", "/")
 	decoded, err := base64.StdEncoding.DecodeString(data)
 	if err != nil {
+		sentrySpan.Status = sentry.SpanStatusFailedPrecondition
+		sentry.CaptureException(err)
 		zap.L().Error("Error decoding Base64URL data: %v", zap.Error(err))
 		return ""
 	}
 	return string(decoded)
 }
 
-func findXLSXLinks(emailBody string, fileList chan<- string, wg *sync.WaitGroup) {
+func findXLSXLinks(emailBody string, fileList chan<- string, wg *sync.WaitGroup, sentrySpan *sentry.Span) {
 	// Regular expression to find .xlsx and CamsOnline links
 	xlsxLinkRegex := regexp.MustCompile(`https?://[^\s]+\.xlsx`)
 	camsLinkRegex := regexp.MustCompile(`https?://delivery\.camsonline\.com[^\s]*`)
@@ -191,7 +222,7 @@ func findXLSXLinks(emailBody string, fileList chan<- string, wg *sync.WaitGroup)
 		wg.Add(1)
 		go func(downloadURL string) {
 			defer wg.Done()
-			downloadFile(downloadURL, fileList)
+			downloadFile(downloadURL, fileList, sentrySpan)
 		}(link)
 	}
 
@@ -200,15 +231,17 @@ func findXLSXLinks(emailBody string, fileList chan<- string, wg *sync.WaitGroup)
 		wg.Add(1)
 		go func(downloadURL string) {
 			defer wg.Done()
-			downloadFile(downloadURL, fileList)
+			downloadFile(downloadURL, fileList, sentrySpan)
 		}(link)
 	}
 }
 
 // Function to download the file from a link
-func downloadFile(url string, fileList chan<- string) {
+func downloadFile(url string, fileList chan<- string, sentrySpan *sentry.Span) {
 	resp, err := http.Get(url)
 	if err != nil {
+		sentrySpan.Status = sentry.SpanStatusFailedPrecondition
+		sentry.CaptureException(err)
 		zap.L().Error("Error downloading file", zap.String("url", url), zap.Error(err))
 		return
 	}
@@ -222,6 +255,8 @@ func downloadFile(url string, fileList chan<- string) {
 	// Read the response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
+		sentrySpan.Status = sentry.SpanStatusFailedPrecondition
+		sentry.CaptureException(err)
 		zap.L().Error("Error reading file", zap.String("url", url), zap.Error(err))
 		return
 	}
@@ -230,6 +265,8 @@ func downloadFile(url string, fileList chan<- string) {
 	filename := uuid.New().String() + ".xlsx"
 	err = os.WriteFile(filename, body, 0644)
 	if err != nil {
+		sentrySpan.Status = sentry.SpanStatusFailedPrecondition
+		sentry.CaptureException(err)
 		zap.L().Error("Error saving file", zap.String("filename", filename), zap.Error(err))
 		return
 	}
