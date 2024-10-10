@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/getsentry/sentry-go"
 	sentrygin "github.com/getsentry/sentry-go/gin"
 	"github.com/gin-gonic/gin"
@@ -98,6 +99,44 @@ func setupSentry() {
 	}); err != nil {
 		zap.L().Error("Sentry initialization failed: ", zap.Any("error", err.Error()))
 	}
+}
+
+func setupKafka() {
+
+	prodcuer, err := kafka.NewProducer(&kafka.ConfigMap{
+		"bootstrap.servers": os.Getenv("KAFKA_BOOTSTRAPSERVERS"),
+	})
+	if err != nil {
+		zap.L().Error("Kafka initialization failed: ", zap.Any("error", err.Error()))
+	}
+
+	defer prodcuer.Close()
+
+	// Delivery report handler for produced messages
+	go func() {
+		for e := range prodcuer.Events() {
+			switch ev := e.(type) {
+			case *kafka.Message:
+				if ev.TopicPartition.Error != nil {
+					zap.L().Error("Kafka Delivery failed: ", zap.Any("error", ev.TopicPartition.Error.Error()))
+				} else {
+					zap.L().Info("Delivered message to %v\n", ev.TopicPartition)
+				}
+			}
+		}
+	}()
+
+	// Produce messages to topic (asynchronously)
+	topic := "myTopic"
+	for _, word := range []string{"Welcome", "to", "the", "Confluent", "Kafka", "Golang", "client"} {
+		prodcuer.Produce(&kafka.Message{
+			TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
+			Value:          []byte(word),
+		}, nil)
+	}
+
+	// Wait for message deliveries before shutting down
+	prodcuer.Flush(15 * 1000)
 }
 
 func main() {
