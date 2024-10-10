@@ -96,7 +96,7 @@ func setupSentry() {
 		// Sentry recommend adjusting this value in production,
 		TracesSampleRate: tracesSampleRate, // 1.0 by default if ENV SENTRY_SAMPLE_RATE not set
 	}); err != nil {
-		log.Printf("Sentry initialization failed: %v\n", err)
+		zap.L().Error("Sentry initialization failed: ", zap.Any("error", err.Error()))
 	}
 }
 
@@ -142,16 +142,16 @@ func startTicker() *time.Ticker {
 
 	go func() {
 		for t := range ticker.C {
-			log.Println("Tick at", t)
+			zap.L().Info("Tick at: ", zap.String("time", t.String()))
+
 			cmd := exec.Command("curl", "https://stock-backend-hz83.onrender.com/api/keepServerRunning")
 			output, err := cmd.CombinedOutput()
 			if err != nil {
-				log.Println("Error running curl:", err)
+				zap.L().Error("Error running curl: ", zap.Any("error", err.Error()))
 				return
 			}
 
-			// Print the output of the curl command
-			log.Println("Curl output:", string(output))
+			zap.L().Info("Curl output: ", zap.String("output", string(output)))
 
 		}
 	}()

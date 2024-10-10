@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"math"
 	"net/http"
 	"os"
@@ -97,7 +96,7 @@ func GetMarketCapCategory(marketCapValue string) string {
 
 	marketCap, err := strconv.ParseFloat(cleanMarketCapValue, 64) // 64-bit float
 	if err != nil {
-		log.Println("Failed to convert market cap to integer: %v", err)
+		zap.L().Error("Failed to convert market cap to integer: ", zap.Any("error", err.Error()))
 	}
 	// Define market cap categories in crore (or billions as per comment)
 	if marketCap >= 20000 {
@@ -549,7 +548,6 @@ func FetchCompanyData(url string) (map[string]interface{}, error) {
 
 		// Print cleaned key-value pairs
 		zap.L().Info("Company Data", zap.String("key", key), zap.String("value", value))
-		log.Printf("%s: %s\n", key, value)
 	})
 	// Extract pros
 	var pros []string
