@@ -12,6 +12,7 @@ import (
 	"stockbackend/services"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
@@ -24,17 +25,24 @@ type Header struct {
 	Value string `json:"value"`
 }
 
+type Body struct {
+	Data string `json:"data"`
+}
+
 type Part struct {
+	PartID   string `json:"partId"`
 	MimeType string `json:"mimeType"`
-	Body     struct {
-		Data string `json:"data"`
-	} `json:"body"`
+	Body     Body   `json:"body"`
+	Parts    []Part `json:"parts"`
 	Filename string `json:"filename"`
 }
 
 type Payload struct {
-	Headers []Header `json:"headers"`
-	Parts   []Part   `json:"parts"`
+	PartID   string   `json:"partId"`
+	MimeType string   `json:"mimeType"`
+	Body     Body     `json:"body"`
+	Headers  []Header `json:"headers"`
+	Parts    []Part   `json:"parts"`
 }
 
 type EmailDetails struct {
@@ -68,7 +76,9 @@ func (g *gmailController) GetEmails(ctx *gin.Context) {
 	defer sentrySpan.Finish()
 
 	accessToken := ctx.PostForm("token")
-	url := "https://gmail.googleapis.com/gmail/v1/users/me/messages?q=portfolio+disclosure"
+	sixMonthsAgo := time.Now().AddDate(0, -6, 0).Format("2006-01-02")
+
+	url := fmt.Sprintf("https://gmail.googleapis.com/gmail/v1/users/me/messages?q=after:%s+portfolio+disclosure", sixMonthsAgo)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -121,7 +131,7 @@ func (g *gmailController) GetEmails(ctx *gin.Context) {
 		wg.Add(1)
 		go func(messageID string) {
 			defer wg.Done()
-			fetchEmailDetails(accessToken, messageID, fileList, &wg, &sentrySpan)
+			fetchEmailDetails(accessToken, messageID, fileList, &wg, sentrySpan)
 		}(msg.ID)
 	}
 
@@ -171,7 +181,6 @@ func fetchEmailDetails(accessToken, emailID string, fileList chan<- string, wg *
 		zap.L().Error("Error reading response body: %v", zap.Error(err))
 		return
 	}
-
 	var emailDetails EmailDetails
 	if err := json.Unmarshal(body, &emailDetails); err != nil {
 		sentrySpan.Status = sentry.SpanStatusFailedPrecondition
@@ -180,18 +189,41 @@ func fetchEmailDetails(accessToken, emailID string, fileList chan<- string, wg *
 		return
 	}
 
-	for _, header := range emailDetails.Payload.Headers {
-		if header.Name == "From" {
-			break
+	emailBody := extractEmailBody(emailDetails.Payload, sentrySpan)
+
+	if emailBody != "" {
+		findRelevantLinks(emailBody, fileList, wg, sentrySpan)
+	} else {
+		zap.L().Info("No valid email body found.")
+	}
+
+}
+
+func extractEmailBody(payload Payload, sentrySpan *sentry.Span) string {
+	if payload.MimeType == "text/plain" || payload.MimeType == "text/html" {
+		if payload.Body.Data != "" {
+			decodedBody := decodeBase64URL(payload.Body.Data, sentrySpan)
+			return decodedBody
 		}
 	}
 
-	for _, part := range emailDetails.Payload.Parts {
-		if part.MimeType == "text/plain" || part.MimeType == "text/html" {
-			emailBody := decodeBase64URL(part.Body.Data, sentrySpan)
-			findXLSXLinks(emailBody, fileList, wg, sentrySpan)
+	return extractFromParts(payload.Parts, sentrySpan)
+}
+
+func extractFromParts(parts []Part, sentrySpan *sentry.Span) string {
+	for _, part := range parts {
+		if (part.MimeType == "text/plain" || part.MimeType == "text/html") && part.Body.Data != "" {
+			decodedBody := decodeBase64URL(part.Body.Data, sentrySpan)
+			return decodedBody
+		}
+		if len(part.Parts) > 0 {
+			nestedBody := extractFromParts(part.Parts, sentrySpan)
+			if nestedBody != "" {
+				return nestedBody
+			}
 		}
 	}
+	return ""
 }
 
 // Helper function to decode Base64URL encoded email content
@@ -207,18 +239,14 @@ func decodeBase64URL(data string, sentrySpan *sentry.Span) string {
 	}
 	return string(decoded)
 }
+func findRelevantLinks(emailBody string, fileList chan<- string, wg *sync.WaitGroup, sentrySpan *sentry.Span) {
+	kfintechLinkRegex := regexp.MustCompile(`https?://scdelivery\.kfintech\.com[^\s"<>]*`)
+	kfintechLinks := kfintechLinkRegex.FindAllString(emailBody, -1)
 
-func findXLSXLinks(emailBody string, fileList chan<- string, wg *sync.WaitGroup, sentrySpan *sentry.Span) {
-	// Regular expression to find .xlsx and CamsOnline links
-	xlsxLinkRegex := regexp.MustCompile(`https?://[^\s]+\.xlsx`)
-	camsLinkRegex := regexp.MustCompile(`https?://delivery\.camsonline\.com[^\s]*`)
-
-	// Find .xlsx links
-	xlsxLinks := xlsxLinkRegex.FindAllString(emailBody, -1)
+	camsLinkRegex := regexp.MustCompile(`https?://delivery\.camsonline\.com[^\s"<>]*`)
 	camsLinks := camsLinkRegex.FindAllString(emailBody, -1)
 
-	// Download .xlsx files
-	for _, link := range xlsxLinks {
+	for _, link := range kfintechLinks {
 		wg.Add(1)
 		go func(downloadURL string) {
 			defer wg.Done()
