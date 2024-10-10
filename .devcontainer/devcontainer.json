@@ -1,0 +1,12 @@
+{
+  "name": "Go & MongoDb & Kafka",
+  "dockerComposeFile": "docker-compose.yml",
+  "workspaceFolder": "/workspaces",
+  "service": "app",
+  "features": {
+    "ghcr.io/itsmechlark/features/rabbitmq-server:1": {
+      "version": "latest"
+    }
+  },
+  "postCreateCommand": "bash scripts/install-dependencies.sh"
+}
