@@ -1,11 +1,11 @@
 package helpers
 
 import (
-    "strings"
-    "reflect"
     "testing"
     "go.mongodb.org/mongo-driver/bson/primitive"
     "github.com/PuerkitoBio/goquery"
+    "strings"
+    "reflect"
 )
 
 func TestMatchHeader_NonMatchingPattern(t *testing.T) {
@@ -369,6 +369,71 @@ func TestIncreaseInRoa(t *testing.T) {
     result := increaseInRoa(netProfit, totalAssets)
     if !result {
         t.Errorf("Expected true, got %v", result)
+    }
+}
+
+
+
+func TestIncreaseInRoa_True(t *testing.T) {
+    netProfit := primitive.A{"1000", "1500", "2000"}
+    totalAssets := primitive.A{"5000", "5500", "6000"}
+    result := increaseInRoa(netProfit, totalAssets)
+    if !result {
+        t.Errorf("Expected true, got %v", result)
+    }
+}
+
+func TestIncreaseInRoa_False(t *testing.T) {
+    netProfit := primitive.A{"2000", "1500", "1000"}
+    totalAssets := primitive.A{"6000", "5500", "5000"}
+    result := increaseInRoa(netProfit, totalAssets)
+    if result {
+        t.Errorf("Expected false, got %v", result)
+    }
+}
+
+
+func TestParseTableData_MultipleRowsAndColumns(t *testing.T) {
+    html := `
+    <html>
+    <body>
+        <section id="data-section">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Year</th>
+                        <th>2019</th>
+                        <th>2020</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="text">Revenue</td>
+                        <td>1000</td>
+                        <td>1500</td>
+                    </tr>
+                    <tr>
+                        <td class="text">Profit</td>
+                        <td>200</td>
+                        <td>300</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+    </body>
+    </html>`
+    doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
+    if err != nil {
+        t.Fatalf("Failed to create document: %v", err)
+    }
+    section := doc.Find("#data-section")
+    result := ParseTableData(section, "table")
+    expected := map[string]interface{}{
+        "Revenue": []string{"1000", "1500"},
+        "Profit":  []string{"200", "300"},
+    }
+    if !reflect.DeepEqual(result, expected) {
+        t.Errorf("Expected %v, got %v", expected, result)
     }
 }
 
