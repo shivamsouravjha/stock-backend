@@ -1,12 +1,14 @@
 package helpers
 
 import (
-    "github.com/PuerkitoBio/goquery"
-    "go.mongodb.org/mongo-driver/bson/primitive"
-    "gopkg.in/mgo.v2/bson"
-    "reflect"
-    "strings"
-    "testing"
+	"reflect"
+	"stockbackend/types"
+	"strings"
+	"testing"
+
+	"github.com/PuerkitoBio/goquery"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"gopkg.in/mgo.v2/bson"
 )
 
 func TestMatchHeader_NonMatchingPattern(t *testing.T) {
@@ -655,34 +657,67 @@ func TestParseTableData_CorrectParsing(t *testing.T) {
 
 }
 
-
 func TestRateStock_MissingFields(t *testing.T) {
-    stock := map[string]interface{}{
-        "name": "Incomplete Stock",
-        // Missing other fields
-    }
-    result := RateStock(stock)
-    expected := 0.0
-    if result != expected {
-        t.Errorf("Expected %v, got %v", expected, result)
-    }
+	stock := map[string]interface{}{
+		"name": "Incomplete Stock",
+		// Missing other fields
+	}
+	result := RateStock(stock)
+	expected := 0.0
+	if result != expected {
+		t.Errorf("Expected %v, got %v", expected, result)
+	}
 }
 
 func TestRateStock_ValidFields(t *testing.T) {
-    stock := map[string]interface{}{
-        "name":          "Valid Stock",
-        "stockPE":       "15.5",
-        "marketCap":     "10000",
-        "dividendYield": "2.5%",
-        "roce":          "20.0",
-        "cons":          primitive.A{"High debt", "Low liquidity"},
-        "pros":          primitive.A{"Strong brand", "High growth potential"},
-        "peers":         primitive.A{bson.M{"pe": "10.0", "market_cap": "8000", "div_yield": "2.0%", "roce": "18.0", "sales_qtr": "500", "np_qtr": "50"}, bson.M{"pe": "12.0", "market_cap": "9000", "div_yield": "2.2%", "roce": "19.0", "sales_qtr": "600", "np_qtr": "60"}, bson.M{"pe": "11.0", "market_cap": "8500", "div_yield": "2.1%", "roce": "18.5", "sales_qtr": "550", "np_qtr": "55"}},
-        "quarterlyResults": bson.M{"Q1": primitive.A{bson.M{"sales": "1000", "profit": "100"}, bson.M{"sales": "1100", "profit": "110"}}, "Q2": primitive.A{bson.M{"sales": "1200", "profit": "120"}, bson.M{"sales": "1300", "profit": "130"}}},
-    }
-    result := RateStock(stock)
-    if result == 0.0 {
-        t.Errorf("Expected non-zero rating, got %v", result)
-    }
+	stock := map[string]interface{}{
+		"name":             "Valid Stock",
+		"stockPE":          "15.5",
+		"marketCap":        "10000",
+		"dividendYield":    "2.5%",
+		"roce":             "20.0",
+		"cons":             primitive.A{"High debt", "Low liquidity"},
+		"pros":             primitive.A{"Strong brand", "High growth potential"},
+		"peers":            primitive.A{bson.M{"pe": "10.0", "market_cap": "8000", "div_yield": "2.0%", "roce": "18.0", "sales_qtr": "500", "np_qtr": "50"}, bson.M{"pe": "12.0", "market_cap": "9000", "div_yield": "2.2%", "roce": "19.0", "sales_qtr": "600", "np_qtr": "60"}, bson.M{"pe": "11.0", "market_cap": "8500", "div_yield": "2.1%", "roce": "18.5", "sales_qtr": "550", "np_qtr": "55"}},
+		"quarterlyResults": bson.M{"Q1": primitive.A{bson.M{"sales": "1000", "profit": "100"}, bson.M{"sales": "1100", "profit": "110"}}, "Q2": primitive.A{bson.M{"sales": "1200", "profit": "120"}, bson.M{"sales": "1300", "profit": "130"}}},
+	}
+	result := RateStock(stock)
+	if result == 0.0 {
+		t.Errorf("Expected non-zero rating, got %v", result)
+	}
 }
 
+func TestAnalyzeTrend_ValidData(t *testing.T) {
+	stock := types.Stock{
+		Name:          "Test Stock",
+		PE:            15.5,
+		MarketCap:     10000,
+		DividendYield: 2.5,
+		ROCE:          20.0,
+	}
+	pastData := bson.M{
+		"Q1": primitive.A{bson.M{"sales": "1000", "profit": "100"}, bson.M{"sales": "1100", "profit": "110"}},
+		"Q2": primitive.A{bson.M{"sales": "1200", "profit": "120"}, bson.M{"sales": "1300", "profit": "130"}},
+	}
+	result := AnalyzeTrend(stock, pastData)
+	if result == 0.0 {
+		t.Errorf("Expected non-zero trend score, got %v", result)
+	}
+}
+
+func TestCompareWithPeers_InsufficientPeers(t *testing.T) {
+	stock := types.Stock{
+		Name:          "Test Stock",
+		PE:            15.5,
+		MarketCap:     10000,
+		DividendYield: 2.5,
+		ROCE:          20.0,
+	}
+	peers := primitive.A{bson.M{"pe": "10.0", "market_cap": "8000", "div_yield": "2.0%", "roce": "18.0"}}
+	result := compareWithPeers(stock, peers)
+	expected := 0.0
+	if result != expected {
+		t.Errorf("Expected %v, got %v", expected, result)
+	}
+
+}
