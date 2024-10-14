@@ -363,3 +363,13 @@ func TestFetchPeerData_InvalidID(t *testing.T) {
     }
 }
 
+func TestIncreaseInRoa(t *testing.T) {
+    netProfit := primitive.A{"1000", "1500", "2000"}
+    totalAssets := primitive.A{"5000", "5500", "6000"}
+    result := increaseInRoa(netProfit, totalAssets)
+    if !result {
+        t.Errorf("Expected true, got %v", result)
+    }
+}
+
+
