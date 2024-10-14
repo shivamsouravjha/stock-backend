@@ -1,12 +1,12 @@
 package helpers
 
 import (
-    "reflect"
-    "strings"
-    "testing"
     "github.com/PuerkitoBio/goquery"
     "go.mongodb.org/mongo-driver/bson/primitive"
     "gopkg.in/mgo.v2/bson"
+    "reflect"
+    "strings"
+    "testing"
 )
 
 func TestMatchHeader_NonMatchingPattern(t *testing.T) {
@@ -667,3 +667,22 @@ func TestRateStock_MissingFields(t *testing.T) {
         t.Errorf("Expected %v, got %v", expected, result)
     }
 }
+
+func TestRateStock_ValidFields(t *testing.T) {
+    stock := map[string]interface{}{
+        "name":          "Valid Stock",
+        "stockPE":       "15.5",
+        "marketCap":     "10000",
+        "dividendYield": "2.5%",
+        "roce":          "20.0",
+        "cons":          primitive.A{"High debt", "Low liquidity"},
+        "pros":          primitive.A{"Strong brand", "High growth potential"},
+        "peers":         primitive.A{bson.M{"pe": "10.0", "market_cap": "8000", "div_yield": "2.0%", "roce": "18.0", "sales_qtr": "500", "np_qtr": "50"}, bson.M{"pe": "12.0", "market_cap": "9000", "div_yield": "2.2%", "roce": "19.0", "sales_qtr": "600", "np_qtr": "60"}, bson.M{"pe": "11.0", "market_cap": "8500", "div_yield": "2.1%", "roce": "18.5", "sales_qtr": "550", "np_qtr": "55"}},
+        "quarterlyResults": bson.M{"Q1": primitive.A{bson.M{"sales": "1000", "profit": "100"}, bson.M{"sales": "1100", "profit": "110"}}, "Q2": primitive.A{bson.M{"sales": "1200", "profit": "120"}, bson.M{"sales": "1300", "profit": "130"}}},
+    }
+    result := RateStock(stock)
+    if result == 0.0 {
+        t.Errorf("Expected non-zero rating, got %v", result)
+    }
+}
+
