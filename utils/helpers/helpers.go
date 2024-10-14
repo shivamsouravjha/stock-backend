@@ -53,14 +53,21 @@ func ToFloat(value interface{}) float64 {
 		// Remove commas from the string
 		cleanStr := strings.ReplaceAll(str, ",", "")
 
+		// Check if the string is empty
+		if cleanStr == "" {
+			zap.L().Error("Error converting to float64: input string is empty")
+			return 0.0
+		}
+
 		// Check if the string contains a percentage symbol
 		if strings.Contains(cleanStr, "%") {
 			// Remove the percentage symbol
 			cleanStr = strings.ReplaceAll(cleanStr, "%", "")
-			// Convert to float and divide by 100 to get the decimal equivalent
+
+			// Parse and divide by 100 to get the decimal equivalent
 			f, err := strconv.ParseFloat(cleanStr, 64)
 			if err != nil {
-				zap.L().Error("Error converting to float64", zap.Error(err))
+				zap.L().Error("Error converting percentage to float64", zap.Error(err))
 				return 0.0
 			}
 			return f / 100.0
@@ -74,6 +81,9 @@ func ToFloat(value interface{}) float64 {
 		}
 		return f
 	}
+
+	// If value is not a string, log the type mismatch
+	zap.L().Error("Error converting to float64: value is not a string")
 	return 0.0
 }
 
