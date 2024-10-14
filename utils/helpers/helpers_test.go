@@ -1,11 +1,12 @@
 package helpers
 
 import (
-    "testing"
-    "go.mongodb.org/mongo-driver/bson/primitive"
-    "github.com/PuerkitoBio/goquery"
-    "strings"
     "reflect"
+    "strings"
+    "testing"
+    "github.com/PuerkitoBio/goquery"
+    "go.mongodb.org/mongo-driver/bson/primitive"
+    "gopkg.in/mgo.v2/bson"
 )
 
 func TestMatchHeader_NonMatchingPattern(t *testing.T) {
@@ -167,16 +168,16 @@ func TestParseFloat_InvalidInput(t *testing.T) {
 }
 
 func TestNormalizeString_LeadingTrailingSpaces(t *testing.T) {
-    input := "   TEST STRING   "
-    expected := "test string"
-    result := NormalizeString(input)
-    if result != expected {
-        t.Errorf("Expected %v, got %v", expected, result)
-    }
+	input := "   TEST STRING   "
+	expected := "test string"
+	result := NormalizeString(input)
+	if result != expected {
+		t.Errorf("Expected %v, got %v", expected, result)
+	}
 }
 
 func TestParsePeersTable_CorrectParsing(t *testing.T) {
-    html := `
+	html := `
     <html>
     <body>
         <div id="peers">
@@ -210,104 +211,94 @@ func TestParsePeersTable_CorrectParsing(t *testing.T) {
         </div>
     </body>
     </html>`
-    doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
-    if err != nil {
-        t.Fatalf("Failed to create document: %v", err)
-    }
-    result := ParsePeersTable(doc, "#peers")
-    expected := []map[string]string{
-        {"Name": "Peer 1", "PE": "10.0", "Market Cap": "8000", "Dividend Yield": "2.0%", "ROCE": "18.0"},
-        {"Name": "Peer 2", "PE": "12.0", "Market Cap": "9000", "Dividend Yield": "2.2%", "ROCE": "19.0"},
-    }
-    if !reflect.DeepEqual(result, expected) {
-        t.Errorf("Expected %v, got %v", expected, result)
-    }
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
+	if err != nil {
+		t.Fatalf("Failed to create document: %v", err)
+	}
+	result := ParsePeersTable(doc, "#peers")
+	expected := []map[string]string{
+		{"Name": "Peer 1", "PE": "10.0", "Market Cap": "8000", "Dividend Yield": "2.0%", "ROCE": "18.0"},
+		{"Name": "Peer 2", "PE": "12.0", "Market Cap": "9000", "Dividend Yield": "2.2%", "ROCE": "19.0"},
+	}
+	if !reflect.DeepEqual(result, expected) {
+		t.Errorf("Expected %v, got %v", expected, result)
+	}
 }
-
 
 func TestCalculateRoa_CorrectCalculation(t *testing.T) {
-    netProfit := "1000"
-    totalAssets := "5000"
-    expected := 0.2
-    result := calculateRoa(netProfit, totalAssets)
-    if result != expected {
-        t.Errorf("Expected %v, got %v", expected, result)
-    }
+	netProfit := "1000"
+	totalAssets := "5000"
+	expected := 0.2
+	result := calculateRoa(netProfit, totalAssets)
+	if result != expected {
+		t.Errorf("Expected %v, got %v", expected, result)
+	}
 }
 
-
 func TestCalculateRoa_ValidInputs(t *testing.T) {
-    netProfit := "1000"
-    totalAssets := "5000"
-    expected := 0.2
-    result := calculateRoa(netProfit, totalAssets)
-    if result != expected {
-        t.Errorf("Expected %v, got %v", expected, result)
-    }
+	netProfit := "1000"
+	totalAssets := "5000"
+	expected := 0.2
+	result := calculateRoa(netProfit, totalAssets)
+	if result != expected {
+		t.Errorf("Expected %v, got %v", expected, result)
+	}
 }
 
 func TestCheckInstrumentName_ValidWithoutThe(t *testing.T) {
-    input := "Name of Instrument"
-    result := CheckInstrumentName(input)
-    if !result {
-        t.Errorf("Expected true, got %v", result)
-    }
+	input := "Name of Instrument"
+	result := CheckInstrumentName(input)
+	if !result {
+		t.Errorf("Expected true, got %v", result)
+	}
 }
-
 
 func TestCheckInstrumentName_Invalid(t *testing.T) {
-    input := "Instrument Name"
-    result := CheckInstrumentName(input)
-    if result {
-        t.Errorf("Expected false, got %v", result)
-    }
+	input := "Instrument Name"
+	result := CheckInstrumentName(input)
+	if result {
+		t.Errorf("Expected false, got %v", result)
+	}
 }
-
 
 func TestParseFloat_IntegerInput(t *testing.T) {
-    input := 123
-    expected := 123.0
-    result := ParseFloat(input)
-    if result != expected {
-        t.Errorf("Expected %v, got %v", expected, result)
-    }
+	input := 123
+	expected := 123.0
+	result := ParseFloat(input)
+	if result != expected {
+		t.Errorf("Expected %v, got %v", expected, result)
+	}
 }
-
 
 func TestNormalizeString_EmptyString(t *testing.T) {
-    input := ""
-    expected := ""
-    result := NormalizeString(input)
-    if result != expected {
-        t.Errorf("Expected %v, got %v", expected, result)
-    }
+	input := ""
+	expected := ""
+	result := NormalizeString(input)
+	if result != expected {
+		t.Errorf("Expected %v, got %v", expected, result)
+	}
 }
-
 
 func TestNormalizeString_MixedCaseAndSpaces(t *testing.T) {
-    input := "  TeSt StRiNg  "
-    expected := "test string"
-    result := NormalizeString(input)
-    if result != expected {
-        t.Errorf("Expected %v, got %v", expected, result)
-    }
+	input := "  TeSt StRiNg  "
+	expected := "test string"
+	result := NormalizeString(input)
+	if result != expected {
+		t.Errorf("Expected %v, got %v", expected, result)
+	}
 }
-
 
 func TestNormalizeString_MixedCase(t *testing.T) {
-    input := "TeSt StRiNg"
-    expected := "test string"
-    result := NormalizeString(input)
-    if result != expected {
-        t.Errorf("Expected %v, got %v", expected, result)
-    }
+	input := "TeSt StRiNg"
+	expected := "test string"
+	result := NormalizeString(input)
+	if result != expected {
+		t.Errorf("Expected %v, got %v", expected, result)
+	}
 }
 
-
-
-
 func TestParsePeersTable(t *testing.T) {
-    html := `
+	html := `
     <html>
     <body>
         <div id="peers">
@@ -341,60 +332,56 @@ func TestParsePeersTable(t *testing.T) {
         </div>
     </body>
     </html>`
-    doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
-    if err != nil {
-        t.Fatalf("Failed to create document: %v", err)
-    }
-    result := ParsePeersTable(doc, "#peers")
-    expected := []map[string]string{
-        {"Name": "Peer 1", "PE": "10.0", "Market Cap": "8000", "Dividend Yield": "2.0%", "ROCE": "18.0"},
-        {"Name": "Peer 2", "PE": "12.0", "Market Cap": "9000", "Dividend Yield": "2.2%", "ROCE": "19.0"},
-    }
-    if !reflect.DeepEqual(result, expected) {
-        t.Errorf("Expected %v, got %v", expected, result)
-    }
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
+	if err != nil {
+		t.Fatalf("Failed to create document: %v", err)
+	}
+	result := ParsePeersTable(doc, "#peers")
+	expected := []map[string]string{
+		{"Name": "Peer 1", "PE": "10.0", "Market Cap": "8000", "Dividend Yield": "2.0%", "ROCE": "18.0"},
+		{"Name": "Peer 2", "PE": "12.0", "Market Cap": "9000", "Dividend Yield": "2.2%", "ROCE": "19.0"},
+	}
+	if !reflect.DeepEqual(result, expected) {
+		t.Errorf("Expected %v, got %v", expected, result)
+	}
 }
 
-
 func TestFetchPeerData_InvalidID(t *testing.T) {
-    _, err := FetchPeerData("invalidID")
-    if err == nil {
-        t.Errorf("Expected error, got nil")
-    }
+	_, err := FetchPeerData("invalidID")
+	if err == nil {
+		t.Errorf("Expected error, got nil")
+	}
 }
 
 func TestIncreaseInRoa(t *testing.T) {
-    netProfit := primitive.A{"1000", "1500", "2000"}
-    totalAssets := primitive.A{"5000", "5500", "6000"}
-    result := increaseInRoa(netProfit, totalAssets)
-    if !result {
-        t.Errorf("Expected true, got %v", result)
-    }
+	netProfit := primitive.A{"1000", "1500", "2000"}
+	totalAssets := primitive.A{"5000", "5500", "6000"}
+	result := increaseInRoa(netProfit, totalAssets)
+	if !result {
+		t.Errorf("Expected true, got %v", result)
+	}
 }
 
-
-
 func TestIncreaseInRoa_True(t *testing.T) {
-    netProfit := primitive.A{"1000", "1500", "2000"}
-    totalAssets := primitive.A{"5000", "5500", "6000"}
-    result := increaseInRoa(netProfit, totalAssets)
-    if !result {
-        t.Errorf("Expected true, got %v", result)
-    }
+	netProfit := primitive.A{"1000", "1500", "2000"}
+	totalAssets := primitive.A{"5000", "5500", "6000"}
+	result := increaseInRoa(netProfit, totalAssets)
+	if !result {
+		t.Errorf("Expected true, got %v", result)
+	}
 }
 
 func TestIncreaseInRoa_False(t *testing.T) {
-    netProfit := primitive.A{"2000", "1500", "1000"}
-    totalAssets := primitive.A{"6000", "5500", "5000"}
-    result := increaseInRoa(netProfit, totalAssets)
-    if result {
-        t.Errorf("Expected false, got %v", result)
-    }
+	netProfit := primitive.A{"2000", "1500", "1000"}
+	totalAssets := primitive.A{"6000", "5500", "5000"}
+	result := increaseInRoa(netProfit, totalAssets)
+	if result {
+		t.Errorf("Expected false, got %v", result)
+	}
 }
 
-
 func TestParseTableData_MultipleRowsAndColumns(t *testing.T) {
-    html := `
+	html := `
     <html>
     <body>
         <section id="data-section">
@@ -422,19 +409,261 @@ func TestParseTableData_MultipleRowsAndColumns(t *testing.T) {
         </section>
     </body>
     </html>`
-    doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
-    if err != nil {
-        t.Fatalf("Failed to create document: %v", err)
-    }
-    section := doc.Find("#data-section")
-    result := ParseTableData(section, "table")
-    expected := map[string]interface{}{
-        "Revenue": []string{"1000", "1500"},
-        "Profit":  []string{"200", "300"},
-    }
-    if !reflect.DeepEqual(result, expected) {
-        t.Errorf("Expected %v, got %v", expected, result)
-    }
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
+	if err != nil {
+		t.Fatalf("Failed to create document: %v", err)
+	}
+	section := doc.Find("#data-section")
+	result := ParseTableData(section, "table")
+	expected := map[string]interface{}{
+		"Revenue": []string{"1000", "1500"},
+		"Profit":  []string{"200", "300"},
+	}
+	if !reflect.DeepEqual(result, expected) {
+		t.Errorf("Expected %v, got %v", expected, result)
+	}
+}
+func TestCalculateProfitabilityScore_MissingProfitLossField(t *testing.T) {
+	stock := map[string]interface{}{
+		"balanceSheet": map[string]interface{}{
+			"Total Assets": primitive.A{"1000", "2000"},
+		},
+		"cashFlows": map[string]interface{}{
+			"Cash from Operating Activity +": primitive.A{"500", "600"},
+		},
+	}
+	result := calculateProfitabilityScore(stock)
+	expected := -1
+	if result != expected {
+
+		t.Errorf("Expected %v, got %v", expected, result)
+	}
+}
+
+func TestCalculateProfitabilityScore_MissingNetProfitField(t *testing.T) {
+	stock := map[string]interface{}{
+		"balanceSheet": map[string]interface{}{
+			"Total Assets": primitive.A{"5000", "6000"},
+		},
+		"cashFlows": map[string]interface{}{
+			"Cash from Operating Activity +": primitive.A{"500", "600"},
+		},
+	}
+	result := calculateProfitabilityScore(stock)
+	expected := -1
+	if result != expected {
+		t.Errorf("Expected %v, got %v", expected, result)
+	}
+}
+
+func TestCalculateProfitabilityScore_MissingTotalAssetsField(t *testing.T) {
+	stock := map[string]interface{}{
+		"profitLoss": map[string]interface{}{
+			"Net Profit +": primitive.A{"1000", "2000"},
+		},
+		"cashFlows": map[string]interface{}{
+			"Cash from Operating Activity +": primitive.A{"500", "600"},
+		},
+	}
+	result := calculateProfitabilityScore(stock)
+	expected := -1
+	if result != expected {
+		t.Errorf("Expected %v, got %v", expected, result)
+	}
+}
+
+func TestCalculateLeverageScore_MissingBorrowingsField(t *testing.T) {
+	stock := map[string]interface{}{
+		"balanceSheet": map[string]interface{}{
+			"Total Assets":        primitive.A{"5000", "4000"},
+			"Other Assets +":      primitive.A{"3000", "2500"},
+			"Other Liabilities +": primitive.A{"1000", "800"},
+			"Equity Capital":      primitive.A{"1000", "1000"},
+		},
+	}
+	result := calculateLeverageScore(stock)
+	expected := -1
+	if result != expected {
+		t.Errorf("Expected %v, got %v", expected, result)
+	}
+}
+
+func TestCalculateLeverageScore_MissingTotalAssetsField(t *testing.T) {
+	stock := map[string]interface{}{
+		"balanceSheet": map[string]interface{}{
+			"Borrowings +":        primitive.A{"2000", "1500"},
+			"Other Assets +":      primitive.A{"3000", "2500"},
+			"Other Liabilities +": primitive.A{"1000", "800"},
+			"Equity Capital":      primitive.A{"1000", "1000"},
+		},
+	}
+	result := calculateLeverageScore(stock)
+	expected := -1
+	if result != expected {
+		t.Errorf("Expected %v, got %v", expected, result)
+	}
+}
+
+func TestGetNestedArrayField_ValidField(t *testing.T) {
+	stock := map[string]interface{}{
+		"balanceSheet": bson.M{
+			"Total Assets": primitive.A{"1000", "2000"},
+		},
+	}
+	result, err := getNestedArrayField(stock, "balanceSheet", "Total Assets")
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+	expected := primitive.A{"1000", "2000"}
+	if !reflect.DeepEqual(result, expected) {
+		t.Errorf("Expected %v, got %v", expected, result)
+	}
+}
+
+func TestGetNestedArrayField_FieldNotFound(t *testing.T) {
+	stock := map[string]interface{}{
+		"balanceSheet": bson.M{
+			"Total Assets": primitive.A{"1000", "2000"},
+		},
+	}
+	_, err := getNestedArrayField(stock, "balanceSheet", "NonExistentField")
+	if err == nil {
+		t.Errorf("Expected error, got nil")
+	}
+}
+
+func TestGetNestedArrayField_NonStringElements(t *testing.T) {
+	stock := map[string]interface{}{
+		"balanceSheet": bson.M{
+			"Total Assets": primitive.A{"1000", 2000},
+		},
+	}
+	_, err := getNestedArrayField(stock, "balanceSheet", "Total Assets")
+	if err == nil {
+		t.Errorf("Expected error, got nil")
+	}
+}
+
+func TestGetNestedArrayField_IncorrectPath(t *testing.T) {
+	stock := map[string]interface{}{
+		"balanceSheet": bson.M{
+			"Total Assets": primitive.A{"1000", "2000"},
+		},
+	}
+	_, err := getNestedArrayField(stock, "balanceSheet", "TotalAssets")
+	if err == nil {
+		t.Errorf("Expected error, got nil")
+	}
+}
+
+func TestFetchCompanyData_InvalidURL(t *testing.T) {
+	_, err := FetchCompanyData("invalid-url")
+	if err == nil {
+		t.Errorf("Expected error, got nil")
+	}
+}
+
+func TestParseShareholdingPattern_CorrectParsing(t *testing.T) {
+	html := `
+    <html>
+    <body>
+        <div id="shareholding">
+            <div id="quarterly-shp">
+                <table>
+                    <thead>
+                        <tr><th>Category</th><th>Q1</th><th>Q2</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td class="text">Promoters</td><td>50%</td><td>51%</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div id="yearly-shp">
+                <table>
+                    <thead>
+                        <tr><th>Category</th><th>2020</th><th>2021</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td class="text">Promoters</td><td>50%</td><td>51%</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </body>
+    </html>`
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
+	if err != nil {
+		t.Fatalf("Failed to create document: %v", err)
+	}
+	section := doc.Find("#shareholding")
+	result := ParseShareholdingPattern(section)
+	expected := map[string]interface{}{
+		"quarterly": []map[string]interface{}{
+			{"category": "Promoters", "values": map[string]string{"Q1": "50%", "Q2": "51%"}},
+		},
+		"yearly": []map[string]interface{}{
+			{"category": "Promoters", "values": map[string]string{"2020": "50%", "2021": "51%"}},
+		},
+	}
+	if !reflect.DeepEqual(result, expected) {
+		t.Errorf("Expected %v, got %v", expected, result)
+	}
+}
+
+func TestParseTableData_CorrectParsing(t *testing.T) {
+	html := `
+    <html>
+    <body>
+        <section id="data-section">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Year</th>
+                        <th>2019</th>
+                        <th>2020</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="text">Revenue</td>
+                        <td>1000</td>
+                        <td>1500</td>
+                    </tr>
+                    <tr>
+                        <td class="text">Profit</td>
+                        <td>200</td>
+                        <td>300</td>
+                    </tr>
+                </tbody>
+            </table>
+        </section>
+    </body>
+    </html>`
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
+	if err != nil {
+		t.Fatalf("Failed to create document: %v", err)
+	}
+	section := doc.Find("#data-section")
+	result := ParseTableData(section, "table")
+	expected := map[string]interface{}{
+		"Revenue": []string{"1000", "1500"},
+		"Profit":  []string{"200", "300"},
+	}
+	if !reflect.DeepEqual(result, expected) {
+		t.Errorf("Expected %v, got %v", expected, result)
+	}
+
 }
 
 
+func TestRateStock_MissingFields(t *testing.T) {
+    stock := map[string]interface{}{
+        "name": "Incomplete Stock",
+        // Missing other fields
+    }
+    result := RateStock(stock)
+    expected := 0.0
+    if result != expected {
+        t.Errorf("Expected %v, got %v", expected, result)
+    }
+}
