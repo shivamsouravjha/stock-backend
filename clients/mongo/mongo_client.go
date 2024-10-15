@@ -2,7 +2,6 @@ package mongo_client
 
 import (
 	"context"
-	"os"
 
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -15,11 +14,11 @@ var (
 )
 
 func init() {
-	zap.L().Info("MONGO_URI: ", zap.String("uri", os.Getenv("MONGO_URI")))
-	zap.L().Info("CLOUDINARY_URL", zap.String("uri", os.Getenv("CLOUDINARY_URL")))
+	zap.L().Info("MONGO_URI: ", zap.String("uri", "mongodb://localhost:27017/stocksight"))
+	zap.L().Info("CLOUDINARY_URL", zap.String("uri", ""))
 
 	serverAPI := options.ServerAPI(options.ServerAPIVersion1)
-	mongoURI := os.Getenv("MONGO_URI")
+	mongoURI := "mongodb://localhost:27017/stocksight"
 	// zap.L().Info("Mongo URI", zap.String("uri", mongoURI))
 	opts := options.Client().ApplyURI(mongoURI).SetServerAPIOptions(serverAPI)
 
