@@ -217,7 +217,14 @@ func (fs *fileService) ParseXLSXFile(ctx *gin.Context, files <-chan string) erro
 								stockDetail["marketCapValue"] = result["marketCap"]
 								stockDetail["url"] = result["url"]
 								stockDetail["marketCap"] = helpers.GetMarketCapCategory(fmt.Sprintf("%v", result["marketCap"]))
-								stockDetail["stockRate"] = helpers.RateStock(result)
+
+								// Call RateStock and handle missing ratings
+								rating := helpers.RateStock(result)
+								if rating >= 0 {
+									stockDetail["stockRate"] = rating
+								} else {
+									stockDetail["stockRate"] = "Rating Not Available"
+								}
 
 								stockFScore := helpers.GenerateFScore(result)
 								if stockFScore < 0 {

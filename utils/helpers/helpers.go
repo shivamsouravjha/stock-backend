@@ -50,23 +50,7 @@ func CheckInstrumentName(input string) bool {
 
 func ToFloat(value interface{}) float64 {
 	if str, ok := value.(string); ok {
-		// Remove commas from the string
 		cleanStr := strings.ReplaceAll(str, ",", "")
-
-		// Check if the string contains a percentage symbol
-		if strings.Contains(cleanStr, "%") {
-			// Remove the percentage symbol
-			cleanStr = strings.ReplaceAll(cleanStr, "%", "")
-			// Convert to float and divide by 100 to get the decimal equivalent
-			f, err := strconv.ParseFloat(cleanStr, 64)
-			if err != nil {
-				zap.L().Error("Error converting to float64", zap.Error(err))
-				return 0.0
-			}
-			return f / 100.0
-		}
-
-		// Parse the cleaned string to float
 		f, err := strconv.ParseFloat(cleanStr, 64)
 		if err != nil {
 			zap.L().Error("Error converting to float64", zap.Error(err))
@@ -112,6 +96,15 @@ func GetMarketCapCategory(marketCapValue string) string {
 // rateStock calculates the final stock rating
 
 func RateStock(stock map[string]interface{}) float64 {
+	// Ensure all required fields are present and valid
+	requiredFields := []string{"name", "stockPE", "marketCap", "dividendYield", "roce", "pros", "cons", "peers", "quarterlyResults"}
+	for _, field := range requiredFields {
+		if _, ok := stock[field]; !ok {
+			zap.L().Warn("Missing required field for rating", zap.String("field", field))
+			return -1 // Return -1 to indicate missing data
+		}
+	}
+
 	// zap.L().Info("Stock data", zap.Any("stock", stock))
 	stockData := types.Stock{
 		Name:          stock["name"].(string),
