@@ -1,3 +1,8 @@
 {
-    "manifest": "https://www.stocksight.online/funding.json"
-}
+    "manifests": [
+      {
+        "url": "https://www.stocksight.online/funding.json"
+      }
+    ]
+  }
+  
