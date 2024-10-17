@@ -52,6 +52,25 @@ func TestCheckInstrumentName_Valid(t *testing.T) {
 	}
 }
 
+func TestGetMarketCapCategory(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"20000", "Large Cap"},
+		{"4999", "Small Cap"},
+		{"15000", "Mid Cap"},
+	}
+
+	for _, test := range tests {
+		result := GetMarketCapCategory(test.input)
+
+		if result != test.expected {
+			t.Errorf("Expected %v, got %v", test.expected, result)
+		}
+	}
+}
+
 func TestToStringArray_PrimitiveArray(t *testing.T) {
 	input := primitive.A{"one", "two", "three"}
 	result := ToStringArray(input)
@@ -70,37 +89,10 @@ func TestToStringArray_InvalidInput(t *testing.T) {
 	}
 }
 
-func TestGetMarketCapCategory_LargeCap(t *testing.T) {
-	input := "20000"
-	expected := "Large Cap"
-	result := GetMarketCapCategory(input)
-	if result != expected {
-		t.Errorf("Expected %v, got %v", expected, result)
-	}
-}
-
-func TestGetMarketCapCategory_SmallCap(t *testing.T) {
-	input := "4999"
-	expected := "Small Cap"
-	result := GetMarketCapCategory(input)
-	if result != expected {
-		t.Errorf("Expected %v, got %v", expected, result)
-	}
-}
-
 func TestToFloat_NonStringInput(t *testing.T) {
 	input := 1234.56
 	expected := 0.0
 	result := ToFloat(input)
-	if result != expected {
-		t.Errorf("Expected %v, got %v", expected, result)
-	}
-}
-
-func TestGetMarketCapCategory_MidCap(t *testing.T) {
-	input := "15000"
-	expected := "Mid Cap"
-	result := GetMarketCapCategory(input)
 	if result != expected {
 		t.Errorf("Expected %v, got %v", expected, result)
 	}
@@ -654,7 +646,59 @@ func TestParseTableData_CorrectParsing(t *testing.T) {
 	if !reflect.DeepEqual(result, expected) {
 		t.Errorf("Expected %v, got %v", expected, result)
 	}
+}
 
+func TestParseTableData_EmptyTable(t *testing.T) {
+	html := `
+    <html>
+    <body>
+        <section id="data-section">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Year</th>
+                        <th>2019</th>
+                        <th>2020</th>
+                    </tr>
+                </thead>
+                <tbody>
+                </tbody>
+            </table>
+        </section>
+    </body>
+    </html>`
+
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
+	if err != nil {
+		t.Fatalf("Failed to create document: %v", err)
+	}
+	section := doc.Find("#data-section")
+	result := ParseTableData(section, "table")
+	expected := map[string]interface{}{}
+	if !reflect.DeepEqual(result, expected) {
+		t.Errorf("Expected %v, got %v", expected, result)
+	}
+}
+
+func TestParseTableData_NoTable(t *testing.T) {
+	html := `
+    <html>
+    <body>
+        <section id="data-section">
+        </section>
+    </body>
+    </html>`
+
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
+	if err != nil {
+		t.Fatalf("Failed to create document: %v", err)
+	}
+	section := doc.Find("#data-section")
+	result := ParseTableData(section, "table")
+
+	if !reflect.ValueOf(result).IsNil() {
+		t.Errorf("Expected nil, got %v", result)
+	}
 }
 
 func TestRateStock_MissingFields(t *testing.T) {
@@ -705,6 +749,25 @@ func TestAnalyzeTrend_ValidData(t *testing.T) {
 	}
 }
 
+func TestAnalyzeTrend_DecreasingTrend(t *testing.T) {
+	stock := types.Stock{
+		Name:          "Test Stock",
+		PE:            15.5,
+		MarketCap:     10000,
+		DividendYield: 2.5,
+		ROCE:          20.0,
+	}
+	pastData := bson.M{
+		"Q1": primitive.A{bson.M{"sales": "1000", "profit": "100"}, bson.M{"sales": "1100", "profit": "110"}},
+		"Q2": primitive.A{bson.M{"sales": "1200", "profit": "120"}, bson.M{"sales": "1300", "profit": "80"}},
+	}
+	result := AnalyzeTrend(stock, pastData)
+
+	if result == 0.0 {
+		t.Errorf("Expected non-zero trend score, got %v", result)
+	}
+}
+
 func TestCompareWithPeers_InsufficientPeers(t *testing.T) {
 	stock := types.Stock{
 		Name:          "Test Stock",
@@ -720,4 +783,32 @@ func TestCompareWithPeers_InsufficientPeers(t *testing.T) {
 		t.Errorf("Expected %v, got %v", expected, result)
 	}
 
+}
+
+func TestCheckArrayElementsAreString_AllElementsAreString(t *testing.T) {
+	input := primitive.A{"all", "elements", "are", "string"}
+	expected := primitive.A{"all", "elements", "are", "string"}
+
+	result, err := checkArrayElementsAreString(input)
+	if err != nil {
+		t.Error("Received error: ", err.Error())
+	}
+
+	if !reflect.DeepEqual(result, expected) {
+		t.Errorf("Expected %v got %v", expected, result)
+	}
+}
+
+func TestCheckArrayElementsAreString_AllElementsAreNotString(t *testing.T) {
+	input := primitive.A{"all", "elements", "are", 1, "string"}
+	expected := primitive.A{}
+
+	result, err := checkArrayElementsAreString(input)
+	if err == nil {
+		t.Error("Expected error received nil")
+	}
+
+	if !reflect.DeepEqual(result, expected) {
+		t.Errorf("Expected %v got %v", expected, result)
+	}
 }
