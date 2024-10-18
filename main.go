@@ -7,7 +7,9 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"stockbackend/middleware"
 	"stockbackend/routes"
+	"stockbackend/services"
 	"strconv"
 	"syscall"
 	"time"
@@ -55,7 +57,7 @@ func CORSMiddleware() gin.HandlerFunc {
 }
 
 // GracefulShutdown handles graceful shutdown of the server and ticker
-func GracefulShutdown(server *http.Server, ticker *time.Ticker) {
+func GracefulShutdown(server *http.Server, ticker, rankUpdater *time.Ticker) {
 	stopper := make(chan os.Signal, 1)
 	// Listen for interrupt and SIGTERM signals
 	signal.Notify(stopper, os.Interrupt, syscall.SIGTERM)
@@ -66,7 +68,7 @@ func GracefulShutdown(server *http.Server, ticker *time.Ticker) {
 
 		// Stop the ticker
 		ticker.Stop()
-
+		rankUpdater.Stop()
 		// Create a context with a timeout for shutdown
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -109,11 +111,13 @@ func main() {
 	setupSentry()
 
 	router := gin.New()
+	router.Use(middleware.RecoveryMiddleware())
+
 	router.Use(sentrygin.New(sentrygin.Options{}))
 	router.Use(CORSMiddleware())
 
 	ticker := startTicker()
-
+	rankUpdater := startRankUpdater()
 	routes.Routes(router)
 
 	port := os.Getenv("PORT")
@@ -128,7 +132,7 @@ func main() {
 	}
 
 	// Call GracefulShutdown with the server and ticker
-	GracefulShutdown(server, ticker)
+	GracefulShutdown(server, ticker, rankUpdater)
 
 	// Start the server
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -156,5 +160,18 @@ func startTicker() *time.Ticker {
 		}
 	}()
 
+	return ticker
+}
+
+func startRankUpdater() *time.Ticker {
+	ticker := time.NewTicker(30 * time.Hour * 24)
+
+	go func() {
+		for t := range ticker.C {
+			//write  a function that is called every 30 days
+			zap.L().Info("Rank updater tick at: ", zap.String("time", t.String()))
+			services.UpdateRating()
+		}
+	}()
 	return ticker
 }
