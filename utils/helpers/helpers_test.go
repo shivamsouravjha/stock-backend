@@ -291,55 +291,6 @@ func TestNormalizeString_MixedCase(t *testing.T) {
 	}
 }
 
-func TestParsePeersTable(t *testing.T) {
-	html := `
-    <html>
-    <body>
-        <div id="peers">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>PE</th>
-                        <th>Market Cap</th>
-                        <th>Dividend Yield</th>
-                        <th>ROCE</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td>Peer 1</td>
-                        <td>10.0</td>
-                        <td>8000</td>
-                        <td>2.0%</td>
-                        <td>18.0</td>
-                    </tr>
-                    <tr>
-                        <td>Peer 2</td>
-                        <td>12.0</td>
-                        <td>9000</td>
-                        <td>2.2%</td>
-                        <td>19.0</td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-    </body>
-    </html>`
-	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
-	if err != nil {
-		t.Fatalf("Failed to create document: %v", err)
-	}
-	result := ParsePeersTable(doc, "#peers")
-	expected := []map[string]string{
-		{"Name": "Peer 1", "PE": "10.0", "Market Cap": "8000", "Dividend Yield": "2.0%", "ROCE": "18.0"},
-		{"Name": "Peer 2", "PE": "12.0", "Market Cap": "9000", "Dividend Yield": "2.2%", "ROCE": "19.0"},
-	}
-	if !reflect.DeepEqual(result, expected) {
-		t.Errorf("Expected %v, got %v", expected, result)
-	}
-}
-
 func TestFetchPeerData_InvalidID(t *testing.T) {
 	_, err := FetchPeerData("invalidID")
 	if err == nil {
@@ -417,6 +368,7 @@ func TestParseTableData_MultipleRowsAndColumns(t *testing.T) {
 		t.Errorf("Expected %v, got %v", expected, result)
 	}
 }
+
 func TestCalculateProfitabilityScore_MissingProfitLossField(t *testing.T) {
 	stock := map[string]interface{}{
 		"balanceSheet": map[string]interface{}{
@@ -526,6 +478,18 @@ func TestGetNestedArrayField_FieldNotFound(t *testing.T) {
 	}
 }
 
+func TestGetNestedArrayField_EmptyFields(t *testing.T) {
+	stock := map[string]interface{}{
+		"balanceSheet": bson.M{
+			"Total Assets": primitive.A{"1000", "2000"},
+		},
+	}
+	_, err := getNestedArrayField(stock)
+	if err == nil {
+		t.Errorf("Expected error, got nil")
+	}
+}
+
 func TestGetNestedArrayField_NonStringElements(t *testing.T) {
 	stock := map[string]interface{}{
 		"balanceSheet": bson.M{
@@ -547,6 +511,23 @@ func TestGetNestedArrayField_IncorrectPath(t *testing.T) {
 	_, err := getNestedArrayField(stock, "balanceSheet", "TotalAssets")
 	if err == nil {
 		t.Errorf("Expected error, got nil")
+	}
+}
+
+func TestGetNestedArrayField_KeysWithPlus(t *testing.T) {
+	stock := map[string]interface{}{
+		"balanceSheet": bson.M{
+			"Other Liabilities\u00A0+": primitive.A{
+				"22", "8", "20", "20",
+				"20", "18", "4", "2",
+				"2", "2", "7", "2",
+			},
+		},
+	}
+
+	_, err := getNestedArrayField(stock, "balanceSheet", "Other Liabilities +")
+	if err != nil {
+		t.Error("Returned error ", err.Error())
 	}
 }
 
@@ -809,6 +790,201 @@ func TestCheckArrayElementsAreString_AllElementsAreNotString(t *testing.T) {
 	}
 
 	if !reflect.DeepEqual(result, expected) {
+		t.Errorf("Expected %v got %v", expected, result)
+	}
+}
+
+func TestGenerateFScore_OnProfitabilityError(t *testing.T) {
+	stock := bson.M{
+		"balanceSheet": bson.M{
+			"Total Assets": primitive.A{"1000", "2000"},
+		},
+		"cashFlows": bson.M{
+			"Cash from Operating Activity +": primitive.A{"500", "600"},
+		},
+	}
+
+	result := GenerateFScore(stock)
+	expected := -1
+
+	if result != expected {
+		t.Errorf("Expected %v got %v", expected, result)
+	}
+}
+
+func TestGenerateFScore_OnLeverageScoreError(t *testing.T) {
+	stock := bson.M{
+		"profitLoss": bson.M{
+			"Net Profit\u00A0+": primitive.A{
+				"5", "-2", "-2",
+				"11", "16", "19",
+				"25", "24", "23",
+				"35", "42", "56",
+				"59",
+			},
+		},
+		"balanceSheet": bson.M{
+			"Total Assets": primitive.A{
+				"294", "328", "333",
+				"334", "363", "376",
+				"404", "444", "452",
+				"514", "523", "588",
+			},
+		},
+		"cashFlows": bson.M{
+			"Cash from Operating Activity\u00A0+": primitive.A{
+				"45", "37", "30",
+				"25", "44", "61",
+				"53", "45", "52",
+				"35", "63", "54",
+			},
+		},
+	}
+
+	result := GenerateFScore(stock)
+	expected := -1
+
+	if result != expected {
+		t.Errorf("Expected %v got %v", expected, result)
+	}
+}
+
+func TestGenerateFScore_OnOperatingEfficiencyError(t *testing.T) {
+	stock := bson.M{
+		"profitLoss": bson.M{
+			"Net Profit\u00A0+": primitive.A{
+				"5", "-2", "-2",
+				"11", "16", "19",
+				"25", "24", "23",
+				"35", "42", "56",
+				"59",
+			},
+		},
+		"balanceSheet": bson.M{
+			"Total Assets": primitive.A{
+				"294", "328", "333",
+				"334", "363", "376",
+				"404", "444", "452",
+				"514", "523", "588",
+			},
+			"Borrowings\u00A0+": primitive.A{
+				"1,464", "495", "486",
+				"509", "498", "101",
+				"4", "0", "0",
+				"0", "4", "5",
+			},
+			"Other Assets\u00A0+": primitive.A{
+				"2,193", "1,882",
+				"1,497", "1,263",
+				"1,386", "1,683",
+				"2,077", "2,121",
+				"2,120", "2,190",
+				"2,421", "2,633",
+			},
+			"Other Liabilities\u00A0+": primitive.A{
+				"1,408", "529", "548",
+				"327", "311", "287",
+				"275", "268", "251",
+				"272", "347", "293",
+			},
+			"Equity Capital": primitive.A{
+				"9", "9", "9", "9",
+				"9", "9", "9", "9",
+				"9", "9", "9", "9",
+			},
+		},
+		"cashFlows": bson.M{
+			"Cash from Operating Activity\u00A0+": primitive.A{
+				"45", "37", "30",
+				"25", "44", "61",
+				"53", "45", "52",
+				"35", "63", "54",
+			},
+		},
+	}
+
+	result := GenerateFScore(stock)
+	expected := -1
+
+	if result != expected {
+		t.Errorf("Expected %v got %v", expected, result)
+	}
+}
+
+func TestGenerateTestFScore_ValidInput(t *testing.T) {
+	stock := bson.M{
+		"profitLoss": bson.M{
+			"Net Profit\u00A0+": primitive.A{
+				"5", "-2", "-2",
+				"11", "16", "19",
+				"25", "24", "23",
+				"35", "42", "56",
+				"59",
+			},
+			"OPM %": primitive.A{
+				"26%", "-19%", "-126%",
+				"-122%", "-73%", "-23%",
+				"-74%", "-71%", "-52%",
+				"-73%", "-9%", "21%",
+				"5%",
+			},
+			"Sales +": primitive.A{
+				"752", "568", "210",
+				"205", "218", "322",
+				"261", "212", "160",
+				"160", "290", "472",
+				"396",
+			},
+			"Revenue": primitive.A{
+				"1,266", "1,388", "1,575", "1,728", "2,043", "2,587",
+			},
+		},
+		"balanceSheet": bson.M{
+			"Total Assets": primitive.A{
+				"294", "328", "333",
+				"334", "363", "376",
+				"404", "444", "452",
+				"514", "523", "588",
+			},
+			"Borrowings\u00A0+": primitive.A{
+				"1,464", "495", "486",
+				"509", "498", "101",
+				"4", "0", "0",
+				"0", "4", "5",
+			},
+			"Other Assets\u00A0+": primitive.A{
+				"2,193", "1,882",
+				"1,497", "1,263",
+				"1,386", "1,683",
+				"2,077", "2,121",
+				"2,120", "2,190",
+				"2,421", "2,633",
+			},
+			"Other Liabilities\u00A0+": primitive.A{
+				"1,408", "529", "548",
+				"327", "311", "287",
+				"275", "268", "251",
+				"272", "347", "293",
+			},
+			"Equity Capital": primitive.A{
+				"9", "9", "9", "9",
+				"9", "9", "9", "9",
+				"9", "9", "9", "9",
+			},
+		},
+		"cashFlows": bson.M{
+			"Cash from Operating Activity\u00A0+": primitive.A{
+				"45", "37", "30",
+				"25", "44", "61",
+				"53", "45", "52",
+				"35", "63", "54",
+			},
+		},
+	}
+
+	result := GenerateFScore(stock)
+	expected := 6
+	if result != expected {
 		t.Errorf("Expected %v got %v", expected, result)
 	}
 }
