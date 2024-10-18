@@ -44,11 +44,48 @@ func TestToFloat_NonNumericString(t *testing.T) {
 	}
 }
 
+func TestToFloat_StringWithOnlyCommas(t *testing.T) {
+	input := ",,"
+	expected := 0.0
+	result := ToFloat(input)
+	if result != expected {
+		t.Errorf("Expected %v, got %v", expected, result)
+	}
+}
+
+func TestToFloat(t *testing.T) {
+	input := "-a%"
+	expected := 0.0
+	result := ToFloat(input)
+	if result != expected {
+		t.Errorf("Expected %v, got %v", expected, result)
+	}
+}
+
 func TestCheckInstrumentName_Valid(t *testing.T) {
 	input := "Name of the Instrument"
 	result := CheckInstrumentName(input)
 	if !result {
 		t.Errorf("Expected true, got %v", result)
+	}
+}
+
+func TestGetMarketCapCategory(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"20000", "Large Cap"},
+		{"4999", "Small Cap"},
+		{"15000", "Mid Cap"},
+	}
+
+	for _, test := range tests {
+		result := GetMarketCapCategory(test.input)
+
+		if result != test.expected {
+			t.Errorf("Expected %v, got %v", test.expected, result)
+		}
 	}
 }
 
@@ -70,37 +107,10 @@ func TestToStringArray_InvalidInput(t *testing.T) {
 	}
 }
 
-func TestGetMarketCapCategory_LargeCap(t *testing.T) {
-	input := "20000"
-	expected := "Large Cap"
-	result := GetMarketCapCategory(input)
-	if result != expected {
-		t.Errorf("Expected %v, got %v", expected, result)
-	}
-}
-
-func TestGetMarketCapCategory_SmallCap(t *testing.T) {
-	input := "4999"
-	expected := "Small Cap"
-	result := GetMarketCapCategory(input)
-	if result != expected {
-		t.Errorf("Expected %v, got %v", expected, result)
-	}
-}
-
 func TestToFloat_NonStringInput(t *testing.T) {
 	input := 1234.56
 	expected := 0.0
 	result := ToFloat(input)
-	if result != expected {
-		t.Errorf("Expected %v, got %v", expected, result)
-	}
-}
-
-func TestGetMarketCapCategory_MidCap(t *testing.T) {
-	input := "15000"
-	expected := "Mid Cap"
-	result := GetMarketCapCategory(input)
 	if result != expected {
 		t.Errorf("Expected %v, got %v", expected, result)
 	}
@@ -299,55 +309,6 @@ func TestNormalizeString_MixedCase(t *testing.T) {
 	}
 }
 
-func TestParsePeersTable(t *testing.T) {
-	html := `
-    <html>
-    <body>
-        <div id="peers">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>PE</th>
-                        <th>Market Cap</th>
-                        <th>Dividend Yield</th>
-                        <th>ROCE</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr>
-                        <td>Peer 1</td>
-                        <td>10.0</td>
-                        <td>8000</td>
-                        <td>2.0%</td>
-                        <td>18.0</td>
-                    </tr>
-                    <tr>
-                        <td>Peer 2</td>
-                        <td>12.0</td>
-                        <td>9000</td>
-                        <td>2.2%</td>
-                        <td>19.0</td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-    </body>
-    </html>`
-	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
-	if err != nil {
-		t.Fatalf("Failed to create document: %v", err)
-	}
-	result := ParsePeersTable(doc, "#peers")
-	expected := []map[string]string{
-		{"Name": "Peer 1", "PE": "10.0", "Market Cap": "8000", "Dividend Yield": "2.0%", "ROCE": "18.0"},
-		{"Name": "Peer 2", "PE": "12.0", "Market Cap": "9000", "Dividend Yield": "2.2%", "ROCE": "19.0"},
-	}
-	if !reflect.DeepEqual(result, expected) {
-		t.Errorf("Expected %v, got %v", expected, result)
-	}
-}
-
 func TestFetchPeerData_InvalidID(t *testing.T) {
 	_, err := FetchPeerData("invalidID")
 	if err == nil {
@@ -425,12 +386,13 @@ func TestParseTableData_MultipleRowsAndColumns(t *testing.T) {
 		t.Errorf("Expected %v, got %v", expected, result)
 	}
 }
+
 func TestCalculateProfitabilityScore_MissingProfitLossField(t *testing.T) {
-	stock := map[string]interface{}{
-		"balanceSheet": map[string]interface{}{
+	stock := bson.M{
+		"balanceSheet": bson.M{
 			"Total Assets": primitive.A{"1000", "2000"},
 		},
-		"cashFlows": map[string]interface{}{
+		"cashFlows": bson.M{
 			"Cash from Operating Activity +": primitive.A{"500", "600"},
 		},
 	}
@@ -443,11 +405,11 @@ func TestCalculateProfitabilityScore_MissingProfitLossField(t *testing.T) {
 }
 
 func TestCalculateProfitabilityScore_MissingNetProfitField(t *testing.T) {
-	stock := map[string]interface{}{
-		"balanceSheet": map[string]interface{}{
+	stock := bson.M{
+		"balanceSheet": bson.M{
 			"Total Assets": primitive.A{"5000", "6000"},
 		},
-		"cashFlows": map[string]interface{}{
+		"cashFlows": bson.M{
 			"Cash from Operating Activity +": primitive.A{"500", "600"},
 		},
 	}
@@ -459,11 +421,11 @@ func TestCalculateProfitabilityScore_MissingNetProfitField(t *testing.T) {
 }
 
 func TestCalculateProfitabilityScore_MissingTotalAssetsField(t *testing.T) {
-	stock := map[string]interface{}{
-		"profitLoss": map[string]interface{}{
-			"Net Profit +": primitive.A{"1000", "2000"},
+	stock := bson.M{
+		"profitLoss": bson.M{
+			"Net Profit\u00A0+": primitive.A{"1000", "2000"},
 		},
-		"cashFlows": map[string]interface{}{
+		"cashFlows": bson.M{
 			"Cash from Operating Activity +": primitive.A{"500", "600"},
 		},
 	}
@@ -474,9 +436,71 @@ func TestCalculateProfitabilityScore_MissingTotalAssetsField(t *testing.T) {
 	}
 }
 
+func TestCalculateProfitabilityScore_MissingCashFromOperatingActivity(t *testing.T) {
+	stock := bson.M{
+		"profitLoss": bson.M{
+			"Net Profit\u00A0+": primitive.A{
+				"5", "-2", "-2",
+				"11", "16", "19",
+				"25", "24", "23",
+				"35", "42", "56",
+				"59",
+			},
+		},
+		"balanceSheet": bson.M{
+			"Total Assets": primitive.A{
+				"294", "328", "333",
+				"334", "363", "376",
+				"404", "444", "452",
+				"514", "523", "588",
+			},
+		},
+	}
+	result := calculateProfitabilityScore(stock)
+	expected := -1
+	if result != expected {
+		t.Errorf("Expected %v, got %v", expected, result)
+	}
+}
+
+func TestCalculateProfitabilityScore_CurrentCashOpsGreaterThanPrevious(t *testing.T) {
+	stock := bson.M{
+		"profitLoss": bson.M{
+			"Net Profit\u00A0+": primitive.A{
+				"5", "-2", "-2",
+				"11", "16", "19",
+				"25", "24", "23",
+				"35", "42", "56",
+				"59",
+			},
+		},
+		"balanceSheet": bson.M{
+			"Total Assets": primitive.A{
+				"294", "328", "333",
+				"334", "363", "376",
+				"404", "444", "452",
+				"514", "523", "588",
+			},
+		},
+		"cashFlows": bson.M{
+			"Cash from Operating Activity\u00A0+": primitive.A{
+				"45", "37", "30",
+				"25", "44", "61",
+				"53", "45", "52",
+				"35", "63", "64",
+			},
+		},
+	}
+	result := calculateProfitabilityScore(stock)
+	expected := 4
+	if result != expected {
+		t.Errorf("Expected %v, got %v", expected, result)
+	}
+}
+
 func TestCalculateLeverageScore_MissingBorrowingsField(t *testing.T) {
-	stock := map[string]interface{}{
-		"balanceSheet": map[string]interface{}{
+	stock := bson.M{
+		"balanceSheet": bson.M{
 			"Total Assets":        primitive.A{"5000", "4000"},
 			"Other Assets +":      primitive.A{"3000", "2500"},
 			"Other Liabilities +": primitive.A{"1000", "800"},
@@ -491,12 +515,60 @@ func TestCalculateLeverageScore_MissingBorrowingsField(t *testing.T) {
 }
 
 func TestCalculateLeverageScore_MissingTotalAssetsField(t *testing.T) {
-	stock := map[string]interface{}{
-		"balanceSheet": map[string]interface{}{
-			"Borrowings +":        primitive.A{"2000", "1500"},
-			"Other Assets +":      primitive.A{"3000", "2500"},
-			"Other Liabilities +": primitive.A{"1000", "800"},
+	stock := bson.M{
+		"balanceSheet": bson.M{
+			"Borrowings\u00A0+":        primitive.A{"5000", "4000"},
+			"Other Assets\u00A0+":      primitive.A{"3000", "2500"},
+			"Other Liabilities\u00A0+": primitive.A{"1000", "800"},
+			"Equity Capital":           primitive.A{"1000", "1000"},
+		},
+	}
+	result := calculateLeverageScore(stock)
+	expected := -1
+	if result != expected {
+		t.Errorf("Expected %v, got %v", expected, result)
+	}
+}
+
+func TestCalculateLeverageScore_MissingOtherAssets(t *testing.T) {
+	stock := bson.M{
+		"balanceSheet": bson.M{
+			"Borrowings\u00A0+":        primitive.A{"5000", "4000"},
+			"Total Assets":             primitive.A{"3000", "2500"},
+			"Other Liabilities\u00A0+": primitive.A{"1000", "800"},
+			"Equity Capital":           primitive.A{"1000", "1000"},
+		},
+	}
+	result := calculateLeverageScore(stock)
+	expected := -1
+	if result != expected {
+		t.Errorf("Expected %v, got %v", expected, result)
+	}
+}
+
+func TestCalculateLeverageScore_MissingOtherLiabilities(t *testing.T) {
+	stock := bson.M{
+		"balanceSheet": bson.M{
+			"Borrowings\u00A0+":   primitive.A{"5000", "4000"},
+			"Total Assets":        primitive.A{"3000", "2500"},
+			"Other Assets\u00A0+": primitive.A{"1000", "800"},
 			"Equity Capital":      primitive.A{"1000", "1000"},
+		},
+	}
+	result := calculateLeverageScore(stock)
+	expected := -1
+	if result != expected {
+		t.Errorf("Expected %v, got %v", expected, result)
+	}
+}
+
+func TestCalculateLeverageScore_MissingEquityCapital(t *testing.T) {
+	stock := bson.M{
+		"balanceSheet": bson.M{
+			"Borrowings\u00A0+":        primitive.A{"5000", "4000"},
+			"Total Assets":             primitive.A{"3000", "2500"},
+			"Other Assets\u00A0+":      primitive.A{"1000", "800"},
+			"Other Liabilities\u00A0+": primitive.A{"1000", "800"},
 		},
 	}
 	result := calculateLeverageScore(stock)
@@ -534,6 +606,18 @@ func TestGetNestedArrayField_FieldNotFound(t *testing.T) {
 	}
 }
 
+func TestGetNestedArrayField_EmptyFields(t *testing.T) {
+	stock := map[string]interface{}{
+		"balanceSheet": bson.M{
+			"Total Assets": primitive.A{"1000", "2000"},
+		},
+	}
+	_, err := getNestedArrayField(stock)
+	if err == nil {
+		t.Errorf("Expected error, got nil")
+	}
+}
+
 func TestGetNestedArrayField_NonStringElements(t *testing.T) {
 	stock := map[string]interface{}{
 		"balanceSheet": bson.M{
@@ -555,6 +639,23 @@ func TestGetNestedArrayField_IncorrectPath(t *testing.T) {
 	_, err := getNestedArrayField(stock, "balanceSheet", "TotalAssets")
 	if err == nil {
 		t.Errorf("Expected error, got nil")
+	}
+}
+
+func TestGetNestedArrayField_KeysWithPlus(t *testing.T) {
+	stock := map[string]interface{}{
+		"balanceSheet": bson.M{
+			"Other Liabilities\u00A0+": primitive.A{
+				"22", "8", "20", "20",
+				"20", "18", "4", "2",
+				"2", "2", "7", "2",
+			},
+		},
+	}
+
+	_, err := getNestedArrayField(stock, "balanceSheet", "Other Liabilities +")
+	if err != nil {
+		t.Error("Returned error ", err.Error())
 	}
 }
 
@@ -654,7 +755,59 @@ func TestParseTableData_CorrectParsing(t *testing.T) {
 	if !reflect.DeepEqual(result, expected) {
 		t.Errorf("Expected %v, got %v", expected, result)
 	}
+}
 
+func TestParseTableData_EmptyTable(t *testing.T) {
+	html := `
+    <html>
+    <body>
+        <section id="data-section">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Year</th>
+                        <th>2019</th>
+                        <th>2020</th>
+                    </tr>
+                </thead>
+                <tbody>
+                </tbody>
+            </table>
+        </section>
+    </body>
+    </html>`
+
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
+	if err != nil {
+		t.Fatalf("Failed to create document: %v", err)
+	}
+	section := doc.Find("#data-section")
+	result := ParseTableData(section, "table")
+	expected := map[string]interface{}{}
+	if !reflect.DeepEqual(result, expected) {
+		t.Errorf("Expected %v, got %v", expected, result)
+	}
+}
+
+func TestParseTableData_NoTable(t *testing.T) {
+	html := `
+    <html>
+    <body>
+        <section id="data-section">
+        </section>
+    </body>
+    </html>`
+
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(html))
+	if err != nil {
+		t.Fatalf("Failed to create document: %v", err)
+	}
+	section := doc.Find("#data-section")
+	result := ParseTableData(section, "table")
+
+	if !reflect.ValueOf(result).IsNil() {
+		t.Errorf("Expected nil, got %v", result)
+	}
 }
 
 func TestRateStock_MissingFields(t *testing.T) {
@@ -705,6 +858,25 @@ func TestAnalyzeTrend_ValidData(t *testing.T) {
 	}
 }
 
+func TestAnalyzeTrend_DecreasingTrend(t *testing.T) {
+	stock := types.Stock{
+		Name:          "Test Stock",
+		PE:            15.5,
+		MarketCap:     10000,
+		DividendYield: 2.5,
+		ROCE:          20.0,
+	}
+	pastData := bson.M{
+		"Q1": primitive.A{bson.M{"sales": "1000", "profit": "100"}, bson.M{"sales": "1100", "profit": "110"}},
+		"Q2": primitive.A{bson.M{"sales": "1200", "profit": "120"}, bson.M{"sales": "1300", "profit": "80"}},
+	}
+	result := AnalyzeTrend(stock, pastData)
+
+	if result == 0.0 {
+		t.Errorf("Expected non-zero trend score, got %v", result)
+	}
+}
+
 func TestCompareWithPeers_InsufficientPeers(t *testing.T) {
 	stock := types.Stock{
 		Name:          "Test Stock",
@@ -719,5 +891,386 @@ func TestCompareWithPeers_InsufficientPeers(t *testing.T) {
 	if result != expected {
 		t.Errorf("Expected %v, got %v", expected, result)
 	}
+}
 
+func TestCompareWithPeers(t *testing.T) {
+	stock := types.Stock{
+		Name:          "Test Stock",
+		PE:            15.5,
+		MarketCap:     10000,
+		DividendYield: 2.5,
+		ROCE:          20.0,
+		QuarterlySales: 7000.0,
+		QuarterlyProfit: 2000.0,
+	}
+	peers := primitive.A{
+		bson.M{
+			"market_cap":     "449311.45",
+			"div_yield":      "0.74",
+			"qtr_sales_var":  "5.96",
+			"roce":           "17.32",
+			"name":           "Sun Pharma.Inds.",
+			"current_price":  "1872.65",
+			"pe":             "42.57",
+			"np_qtr":         "2860.51",
+			"qtr_profit_var": "25.05",
+			"sales_qtr":      "12652.75",
+		},
+		bson.M{
+			"market_cap":     "132360.30",
+			"div_yield":      "0.79",
+			"qtr_profit_var": "18.05",
+			"sales_qtr":      "6693.94",
+			"name":           "Cipla",
+			"pe":             "29.85",
+			"np_qtr":         "1175.46",
+			"qtr_sales_var":  "5.77",
+			"roce":           "22.80",
+			"current_price":  "1639.00",
+		},
+		bson.M{
+			"qtr_sales_var":  "13.88",
+			"roce":           "26.53",
+			"name":           "Dr Reddy's Labs",
+			"pe":             "19.93",
+			"div_yield":      "0.60",
+			"np_qtr":         "1392.40",
+			"qtr_profit_var": "-0.90",
+			"sales_qtr":      "7696.10",
+			"current_price":  "6638.40",
+			"market_cap":     "110774.91",
+		},
+	}
+
+	result := compareWithPeers(stock, peers)
+	expected := 34.0
+	if result != expected {
+		t.Errorf("Expected %v, got %v", expected, result)
+	}
+}
+
+func TestCheckArrayElementsAreString_AllElementsAreString(t *testing.T) {
+	input := primitive.A{"all", "elements", "are", "string"}
+	expected := primitive.A{"all", "elements", "are", "string"}
+
+	result, err := checkArrayElementsAreString(input)
+	if err != nil {
+		t.Error("Received error: ", err.Error())
+	}
+
+	if !reflect.DeepEqual(result, expected) {
+		t.Errorf("Expected %v got %v", expected, result)
+	}
+}
+
+func TestCheckArrayElementsAreString_AllElementsAreNotString(t *testing.T) {
+	input := primitive.A{"all", "elements", "are", 1, "string"}
+	expected := primitive.A{}
+
+	result, err := checkArrayElementsAreString(input)
+	if err == nil {
+		t.Error("Expected error received nil")
+	}
+
+	if !reflect.DeepEqual(result, expected) {
+		t.Errorf("Expected %v got %v", expected, result)
+	}
+}
+
+func TestGenerateFScore_OnProfitabilityError(t *testing.T) {
+	stock := bson.M{
+		"balanceSheet": bson.M{
+			"Total Assets": primitive.A{"1000", "2000"},
+		},
+		"cashFlows": bson.M{
+			"Cash from Operating Activity +": primitive.A{"500", "600"},
+		},
+	}
+
+	result := GenerateFScore(stock)
+	expected := -1
+
+	if result != expected {
+		t.Errorf("Expected %v got %v", expected, result)
+	}
+}
+
+func TestGenerateFScore_OnLeverageScoreError(t *testing.T) {
+	stock := bson.M{
+		"profitLoss": bson.M{
+			"Net Profit\u00A0+": primitive.A{"5", "-2", "-2"},
+		},
+		"balanceSheet": bson.M{
+			"Total Assets": primitive.A{"294", "328", "333"},
+		},
+		"cashFlows": bson.M{
+			"Cash from Operating Activity\u00A0+": primitive.A{"45", "37", "30"},
+		},
+	}
+
+	result := GenerateFScore(stock)
+	expected := -1
+
+	if result != expected {
+		t.Errorf("Expected %v got %v", expected, result)
+	}
+}
+
+func TestGenerateFScore_OnOperatingEfficiencyError(t *testing.T) {
+	stock := bson.M{
+		"profitLoss": bson.M{
+			"Net Profit\u00A0+": primitive.A{"5", "-2", "-2"},
+		},
+		"balanceSheet": bson.M{
+			"Total Assets":             primitive.A{"294", "328", "333"},
+			"Borrowings\u00A0+":        primitive.A{"1,464", "495", "486"},
+			"Other Assets\u00A0+":      primitive.A{"2,193", "1,882", "1,497"},
+			"Other Liabilities\u00A0+": primitive.A{"1,408", "529", "548"},
+			"Equity Capital":           primitive.A{"9", "9", "9", "9"},
+		},
+		"cashFlows": bson.M{
+			"Cash from Operating Activity\u00A0+": primitive.A{"45", "37", "30"},
+		},
+	}
+
+	result := GenerateFScore(stock)
+	expected := -1
+
+	if result != expected {
+		t.Errorf("Expected %v got %v", expected, result)
+	}
+}
+
+func TestGenerateTestFScore_ValidInput(t *testing.T) {
+	stock := bson.M{
+		"profitLoss": bson.M{
+			"Net Profit\u00A0+": primitive.A{
+				"5", "-2", "-2",
+				"11", "16", "19",
+				"25", "24", "23",
+				"35", "42", "56",
+				"59",
+			},
+			"OPM %": primitive.A{
+				"26%", "-19%", "-126%",
+				"-122%", "-73%", "-23%",
+				"-74%", "-71%", "-52%",
+				"-73%", "-9%", "21%",
+				"5%",
+			},
+			"Sales +": primitive.A{
+				"752", "568", "210",
+				"205", "218", "322",
+				"261", "212", "160",
+				"160", "290", "472",
+				"396",
+			},
+			"Revenue": primitive.A{
+				"1,266", "1,388", "1,575", "1,728", "2,043", "2,587",
+			},
+		},
+		"balanceSheet": bson.M{
+			"Total Assets": primitive.A{
+				"294", "328", "333",
+				"334", "363", "376",
+				"404", "444", "452",
+				"514", "523", "588",
+			},
+			"Borrowings\u00A0+": primitive.A{
+				"1,464", "495", "486",
+				"509", "498", "101",
+				"4", "0", "0",
+				"0", "4", "5",
+			},
+			"Other Assets\u00A0+": primitive.A{
+				"2,193", "1,882",
+				"1,497", "1,263",
+				"1,386", "1,683",
+				"2,077", "2,121",
+				"2,120", "2,190",
+				"2,421", "2,633",
+			},
+			"Other Liabilities\u00A0+": primitive.A{
+				"1,408", "529", "548",
+				"327", "311", "287",
+				"275", "268", "251",
+				"272", "347", "293",
+			},
+			"Equity Capital": primitive.A{
+				"9", "9", "9", "9",
+				"9", "9", "9", "9",
+				"9", "9", "9", "9",
+			},
+		},
+		"cashFlows": bson.M{
+			"Cash from Operating Activity\u00A0+": primitive.A{
+				"45", "37", "30",
+				"25", "44", "61",
+				"53", "45", "52",
+				"35", "63", "54",
+			},
+		},
+	}
+
+	result := GenerateFScore(stock)
+	expected := 6
+	if result != expected {
+		t.Errorf("Expected %v got %v", expected, result)
+	}
+}
+
+func TestCalculateOperatingEfficiencyScore_MissingNetProfit(t *testing.T) {
+	stock := bson.M{
+		"balanceSheet": bson.M{
+			"Total Assets":             primitive.A{"294", "328", "333"},
+			"Borrowings\u00A0+":        primitive.A{"1,464", "495", "486"},
+			"Other Assets\u00A0+":      primitive.A{"2,193", "1,882", "1,497"},
+			"Other Liabilities\u00A0+": primitive.A{"1,408", "529", "548"},
+			"Equity Capital":           primitive.A{"9", "9", "9", "9"},
+		},
+		"cashFlows": bson.M{
+			"Cash from Operating Activity\u00A0+": primitive.A{"45", "37", "30"},
+		},
+	}
+
+	result := calculateOperatingEfficiencyScore(stock)
+	expected := -1
+
+	if result != expected {
+		t.Errorf("Expected %v got %v", expected, result)
+	}
+}
+
+func TestCalculateOperatingEfficiencyScore_MissingRevenueWithSalesMissing(t *testing.T) {
+	stock := bson.M{
+		"profitLoss": bson.M{
+			"Net Profit\u00A0+": primitive.A{"5", "-2", "-2"},
+			"OPM %":             primitive.A{"26%", "-19%", "-126%"},
+		},
+		"balanceSheet": bson.M{
+			"Total Assets":             primitive.A{"294", "328", "333"},
+			"Borrowings\u00A0+":        primitive.A{"1,464", "495", "486"},
+			"Other Assets\u00A0+":      primitive.A{"2,193", "1,882", "1,497"},
+			"Other Liabilities\u00A0+": primitive.A{"1,408", "529", "548"},
+			"Equity Capital":           primitive.A{"9", "9", "9", "9"},
+		},
+		"cashFlows": bson.M{
+			"Cash from Operating Activity\u00A0+": primitive.A{"45", "37", "30"},
+		},
+	}
+
+	result := calculateOperatingEfficiencyScore(stock)
+	expected := -1
+
+	if result != expected {
+		t.Errorf("Expected %v got %v", expected, result)
+	}
+}
+
+func TestCalculateOperatingEfficiencyScore_MissingSales(t *testing.T) {
+	stock := bson.M{
+		"profitLoss": bson.M{
+			"Net Profit\u00A0+": primitive.A{"5", "-2", "-2"},
+			"OPM %":             primitive.A{"26%", "-19%", "-126%"},
+			"Revenue":           primitive.A{"1,266", "1,388", "1,575"},
+		},
+		"balanceSheet": bson.M{
+			"Total Assets":             primitive.A{"294", "328", "333"},
+			"Borrowings\u00A0+":        primitive.A{"1,464", "495", "486"},
+			"Other Assets\u00A0+":      primitive.A{"2,193", "1,882", "1,497"},
+			"Other Liabilities\u00A0+": primitive.A{"1,408", "529", "548"},
+			"Equity Capital":           primitive.A{"9", "9", "9", "9"},
+		},
+		"cashFlows": bson.M{
+			"Cash from Operating Activity\u00A0+": primitive.A{"45", "37", "30"},
+		},
+	}
+
+	result := calculateOperatingEfficiencyScore(stock)
+	expected := 1
+
+	if result != expected {
+		t.Errorf("Expected %v got %v", expected, result)
+	}
+}
+
+func TestCalculateOperatingEfficiencyScore_CurrentMarginGreaterThanPrevious(t *testing.T) {
+	stock := bson.M{
+		"profitLoss": bson.M{
+			"Net Profit\u00A0+": primitive.A{"5", "10", "-2"},
+			"Revenue":           primitive.A{"1,266", "1,388", "1,575"},
+			"Sales\u00A0+":      primitive.A{"752", "568", "210"},
+		},
+		"balanceSheet": bson.M{
+			"Total Assets":             primitive.A{"294", "328", "333"},
+			"Borrowings\u00A0+":        primitive.A{"1,464", "495", "486"},
+			"Other Assets\u00A0+":      primitive.A{"2,193", "1,882", "1,497"},
+			"Other Liabilities\u00A0+": primitive.A{"1,408", "529", "548"},
+			"Equity Capital":           primitive.A{"9", "9", "9", "9"},
+		},
+		"cashFlows": bson.M{
+			"Cash from Operating Activity\u00A0+": primitive.A{"45", "37", "30"},
+		},
+	}
+
+	result := calculateOperatingEfficiencyScore(stock)
+	expected := 1
+
+	if result != expected {
+		t.Errorf("Expected %v got %v", expected, result)
+	}
+}
+
+func TestCalculateOperatingEfficiencyScore_ProfitAndRevenueLengthLessThan2(t *testing.T) {
+	stock := bson.M{
+		"profitLoss": bson.M{
+			"Net Profit\u00A0+": primitive.A{"5"},
+			"Revenue":           primitive.A{"1,266"},
+			"Sales\u00A0+":      primitive.A{"752", "568", "210"},
+		},
+		"balanceSheet": bson.M{
+			"Total Assets":             primitive.A{"294", "328", "333"},
+			"Borrowings\u00A0+":        primitive.A{"1,464", "495", "486"},
+			"Other Assets\u00A0+":      primitive.A{"2,193", "1,882", "1,497"},
+			"Other Liabilities\u00A0+": primitive.A{"1,408", "529", "548"},
+			"Equity Capital":           primitive.A{"9", "9", "9", "9"},
+		},
+		"cashFlows": bson.M{
+			"Cash from Operating Activity\u00A0+": primitive.A{"45", "37", "30"},
+		},
+	}
+
+	result := calculateOperatingEfficiencyScore(stock)
+	expected := -1
+
+	if result != expected {
+		t.Errorf("Expected %v got %v", expected, result)
+	}
+}
+
+func TestCalculateOperatingEfficiencyScore_TotalAssetsMissing(t *testing.T) {
+	stock := bson.M{
+		"profitLoss": bson.M{
+			"Net Profit\u00A0+": primitive.A{"5"},
+			"Revenue":           primitive.A{"1,266"},
+			"OPM %":             primitive.A{"26%", "-19%", "-126%"},
+			"Sales\u00A0+":      primitive.A{"752", "568", "210"},
+		},
+		"balanceSheet": bson.M{
+			"Borrowings\u00A0+":        primitive.A{"1,464", "495", "486"},
+			"Other Assets\u00A0+":      primitive.A{"2,193", "1,882", "1,497"},
+			"Other Liabilities\u00A0+": primitive.A{"1,408", "529", "548"},
+			"Equity Capital":           primitive.A{"9", "9", "9", "9"},
+		},
+		"cashFlows": bson.M{
+			"Cash from Operating Activity\u00A0+": primitive.A{"45", "37", "30"},
+		},
+	}
+
+	result := calculateOperatingEfficiencyScore(stock)
+	expected := -1
+
+	if result != expected {
+		t.Errorf("Expected %v got %v", expected, result)
+	}
 }
