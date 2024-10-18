@@ -1,0 +1,25 @@
+name: Go Test 
+
+on:
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v5
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.23.0'
+
+    - name: Install dependencies
+      run: go mod tidy
+
+    - name: Run tests
+      run: go test -v ./...
