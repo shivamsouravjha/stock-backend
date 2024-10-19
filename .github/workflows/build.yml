@@ -21,6 +21,19 @@ jobs:
         uses: actions/setup-go@v4
         with:
           go-version: 1.23
+      
+      - name: Run gofmt to check formatting
+        run: |
+          gofmt -l .
+      
+      # If there are any unformatted files, the job fails
+      - name: Fail if files are unformatted
+        run: |
+          if [ -n "$(gofmt -l .)" ]; then
+            echo "Code is not formatted. Run 'gofmt' on your code.";
+            exit 1;
+          fi
+
 
       - name: Build Project
         run: go build ./...
