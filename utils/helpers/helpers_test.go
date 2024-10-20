@@ -895,12 +895,12 @@ func TestCompareWithPeers_InsufficientPeers(t *testing.T) {
 
 func TestCompareWithPeers(t *testing.T) {
 	stock := types.Stock{
-		Name:          "Test Stock",
-		PE:            15.5,
-		MarketCap:     10000,
-		DividendYield: 2.5,
-		ROCE:          20.0,
-		QuarterlySales: 7000.0,
+		Name:            "Test Stock",
+		PE:              15.5,
+		MarketCap:       10000,
+		DividendYield:   2.5,
+		ROCE:            20.0,
+		QuarterlySales:  7000.0,
 		QuarterlyProfit: 2000.0,
 	}
 	peers := primitive.A{

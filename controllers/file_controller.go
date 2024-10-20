@@ -100,6 +100,10 @@ func (f *fileController) ParseXLSXFile(ctx *gin.Context) {
 	}
 
 	span.Status = sentry.SpanStatusOK
-	ctx.Writer.Write([]byte("\nStream complete.\n"))
+	if _, err := ctx.Writer.Write([]byte("\nStream complete.\n")); err != nil {
+		ctx.JSON(500, gin.H{"error": "Error streaming"})
+		return
+	}
+
 	ctx.Writer.Flush() // Ensure the final response is sent
 }
