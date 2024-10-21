@@ -10,6 +10,7 @@ import (
 	"path"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/cloudinary/cloudinary-go/v2"
 	"github.com/cloudinary/cloudinary-go/v2/api/admin"
@@ -17,20 +18,20 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
-func assert(b bool, mess string){
-	red   := "\033[31m"
+func assert(b bool, mess string) {
+	red := "\033[31m"
 	green := "\033[32m"
 	reset := "\033[0m"
 	if b {
 		panic(red + "Assert FAILED: " + mess + reset)
 	}
 	if os.Getenv("DEBUG") == "true" {
-		fmt.Println(green + "Assert PASSED: ", mess + reset)
+		fmt.Println(green+"Assert PASSED: ", mess+reset)
 	}
 }
 
 func setupCheck() {
-	if (len(os.Getenv("CLOUDINARY_URL")) < 5 ) {
+	if len(os.Getenv("CLOUDINARY_URL")) < 5 {
 		panic("Please provied a CLOUDINARY_URL. Run `export CLOUDINARY_URL=your@url` before in your shell for linux and MacOS")
 	}
 	if os.Getenv("DEBUG") != "true" {
@@ -40,9 +41,10 @@ func setupCheck() {
 
 func main() {
 	setupCheck()
+	fmt.Println("Env", os.Getenv("MONGO_URI"))
 	scheduler := cron.New()
-	debug := os.Getenv("DEBUG") == "true"
 
+	debug := os.Getenv("DEBUG") == "true"
 
 	if !debug {
 		// cron dose not support the L flag, for last day of the month!
@@ -70,7 +72,7 @@ func main() {
 		// Need this here for proper Next time calculation
 		scheduler.Start()
 		if err != nil {
-		    fmt.Println("An error occurred: the scheduler could not be added.")
+			fmt.Println("An error occurred: the scheduler could not be added.")
 		} else {
 			fmt.Println("Next run time for Debug Scheduler:", scheduler.Entry(jobID).Next)
 		}
@@ -168,6 +170,85 @@ func uploadToCloudinary(fileURL string) {
 	}
 
 	log.Printf("File uploaded successfully: %s\n", resp.SecureURL)
+
+	// for db
+	//resp.SecureURL is the Cloudinary Link
+	// (resp.SecureURL)
+	//publicId is the completeName
+	// fmt.Println(publicID)
+	// fmt.Println(uuid)
+
+	month := extractMonth(publicID)
+	if month == "" {
+		fmt.Println("Not found month")
+	} else {
+		fmt.Println(month)
+	}
+	//fund house???(ask)
+}
+
+func extractMonth(fileName string) string {
+	patterns := []*regexp.Regexp{
+		regexp.MustCompile(`\d{2}\.\d{2}\.\d{4}`),                                     // dd.mm.yyyy
+		regexp.MustCompile(`\d{2}-\d{2}-\d{4}`),                                       // dd-mm-yyyy
+		regexp.MustCompile(`\d{2}-\d{2}-\d{2}`),                                       // dd-mm-yy
+		regexp.MustCompile(`\d{2}-\d{4}`),                                             // mm-yyyy
+		regexp.MustCompile(`(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)-\d{2}`), // Abbreviated month-year (e.g., Mar-23)
+		regexp.MustCompile(`(January|February|March|April|May|June|July|August|September|October|November|December)-\d{4}`), // Full month-year (e.g., March-2021)
+	}
+	for _, pattern := range patterns {
+		match := pattern.FindString(fileName)
+		if match != "" {
+			parsedDate := parseDate(match)
+			if parsedDate != "" {
+				return parsedDate
+			}
+		}
+	}
+	return ""
+}
+
+func parseDate(dateStr string) string {
+	if strings.Contains(dateStr, ".") {
+		t, err := time.Parse("02.01.2006", dateStr)
+		if err == nil {
+			return t.Format("2006-01-02")
+		}
+	}
+	layouts := []string{
+		"02-01-2006",   // dd-mm-yyyy
+		"02-01-06",     // dd-mm-yy
+		"01-2006",      // mm-yyyy
+		"Jan-06",       // Abbreviated month-year
+		"January-2006", // Full month-year
+	}
+
+	for _, layout := range layouts {
+		t, err := time.Parse(layout, dateStr)
+		if err == nil {
+			// Format the date in YYYY-MM-DD format
+			return t.Format("2006-01-02")
+		}
+	}
+
+	// Handle month-year patterns (e.g., Mar-23, January-2021)
+	if len(dateStr) == 7 || len(dateStr) == 10 {
+		monthAbbrevToFull := map[string]string{
+			"Jan": "January", "Feb": "February", "Mar": "March", "Apr": "April",
+			"May": "May", "Jun": "June", "Jul": "July", "Aug": "August",
+			"Sep": "September", "Oct": "October", "Nov": "November", "Dec": "December",
+		}
+		for abbr, full := range monthAbbrevToFull {
+			if strings.Contains(dateStr, abbr) {
+				dateStr = strings.Replace(dateStr, abbr, full, 1)
+				t, err := time.Parse("January-06", dateStr)
+				if err == nil {
+					return t.Format("2006-01")
+				}
+			}
+		}
+	}
+	return ""
 }
 
 func checkFileExistence(cld *cloudinary.Cloudinary, publicID string) (bool, error) {
