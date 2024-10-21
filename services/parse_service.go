@@ -9,13 +9,16 @@ import (
 	"os"
 	"path"
 	"regexp"
+	mongo_client "stockbackend/clients/mongo"
 	"strings"
 	"time"
 
 	"github.com/cloudinary/cloudinary-go/v2"
 	"github.com/cloudinary/cloudinary-go/v2/api/admin"
 	"github.com/cloudinary/cloudinary-go/v2/api/uploader"
+	"github.com/google/uuid"
 	"github.com/robfig/cron/v3"
+	"gopkg.in/mgo.v2/bson"
 )
 
 func assert(b bool, mess string) {
@@ -41,7 +44,6 @@ func setupCheck() {
 
 func main() {
 	setupCheck()
-	fmt.Println("Env", os.Getenv("MONGO_URI"))
 	scheduler := cron.New()
 
 	debug := os.Getenv("DEBUG") == "true"
@@ -171,20 +173,24 @@ func uploadToCloudinary(fileURL string) {
 
 	log.Printf("File uploaded successfully: %s\n", resp.SecureURL)
 
-	// for db
-	//resp.SecureURL is the Cloudinary Link
-	// (resp.SecureURL)
-	//publicId is the completeName
-	// fmt.Println(publicID)
-	// fmt.Println(uuid)
-
 	month := extractMonth(publicID)
-	if month == "" {
-		fmt.Println("Not found month")
-	} else {
-		fmt.Println(month)
+	fileUUID := uuid.New().String()
+	document := bson.M{
+		"month":          month,
+		"completeName":   publicID,
+		"cloudinaryLink": resp.SecureURL,
+		"id":             fileUUID,
 	}
-	//fund house???(ask)
+
+	collection := mongo_client.Client.Database(os.Getenv("DATABASE")).Collection(os.Getenv("COLLECTION"))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err = collection.InsertOne(ctx, document)
+	if err != nil {
+		log.Println("Error inserting document into MongoDB:", err)
+		return
+	}
+	log.Printf("Document inserted successfully into MongoDB. UUID: %s\n", fileUUID)
 }
 
 func extractMonth(fileName string) string {
