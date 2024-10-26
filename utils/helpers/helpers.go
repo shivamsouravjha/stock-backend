@@ -3,7 +3,7 @@ package helpers
 import (
 	"errors"
 	"fmt"
-	"io"
+	"io/ioutil"
 	"math"
 	"net/http"
 	"os"
@@ -379,7 +379,7 @@ func FetchPeerData(dataWarehouseID string) ([]map[string]string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
+		bodyBytes, _ := ioutil.ReadAll(resp.Body)
 		bodyString := string(bodyBytes)
 		zap.L().Error("Received non-200 response code", zap.Int("status_code", resp.StatusCode), zap.String("body", bodyString))
 		return nil, fmt.Errorf("received non-200 response code from peers API: %d", resp.StatusCode)
@@ -517,7 +517,7 @@ func FetchCompanyData(url string) (map[string]interface{}, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch the company page: %v", err)
 	}
-
+	defer body.Close()
 	// Parse the HTML content of the company page
 	doc, err := goquery.NewDocumentFromReader(body)
 	if err != nil {

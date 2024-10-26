@@ -37,7 +37,6 @@ func (s *stockController) GetStocks(ctx *gin.Context) {
 	findOptions := options.Find()
 	findOptions.SetLimit(10)
 	findOptions.SetSkip(int64(10 * (pageNumber - 1)))
-	findOptions.SetSort(bson.M{"rank": -1})
 	cursor, err := collection.Find(ctx, bson.M{}, findOptions)
 	if err != nil {
 		zap.L().Error("Error while fetching documents", zap.Error(err))

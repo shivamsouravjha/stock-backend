@@ -66,11 +66,11 @@ func GetCompanyPage(url string) (io.ReadCloser, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch the URL: %v", err)
 	}
-	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("failed to retrieve the content, status code: %d", resp.StatusCode)
 	}
 
-	return resp.Body, nil
+	respBody := resp.Body
+	return respBody, nil
 }
