@@ -53,14 +53,21 @@ func ToFloat(value interface{}) float64 {
 		// Remove commas from the string
 		cleanStr := strings.ReplaceAll(str, ",", "")
 
+		// Check if the string is empty
+		if cleanStr == "" {
+			zap.L().Error("Error converting to float64: input string is empty")
+			return 0.0
+		}
+
 		// Check if the string contains a percentage symbol
 		if strings.Contains(cleanStr, "%") {
 			// Remove the percentage symbol
 			cleanStr = strings.ReplaceAll(cleanStr, "%", "")
-			// Convert to float and divide by 100 to get the decimal equivalent
+
+			// Parse and divide by 100 to get the decimal equivalent
 			f, err := strconv.ParseFloat(cleanStr, 64)
 			if err != nil {
-				zap.L().Error("Error converting to float64", zap.Error(err))
+				zap.L().Error("Error converting percentage to float64", zap.Error(err))
 				return 0.0
 			}
 			return f / 100.0
@@ -74,6 +81,9 @@ func ToFloat(value interface{}) float64 {
 		}
 		return f
 	}
+
+	// If value is not a string, log the type mismatch
+	zap.L().Error("Error converting to float64: value is not a string")
 	return 0.0
 }
 
@@ -185,8 +195,11 @@ func compareWithPeers(stock types.Stock, peers interface{}) float64 {
 			}
 		}
 		medianRaw := arr[len(arr)-1]
-		median := medianRaw.(bson.M)
-
+		median, ok := medianRaw.(bson.M)
+		if !ok {
+			zap.L().Warn("Failed to parse median data")
+			return peerScore
+		}
 		// Parse median values to float64
 		medianPE := ParseFloat(median["pe"])
 		medianMarketCap := ParseFloat(median["market_cap"])
@@ -504,7 +517,7 @@ func FetchCompanyData(url string) (map[string]interface{}, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch the company page: %v", err)
 	}
-
+	defer body.Close()
 	// Parse the HTML content of the company page
 	doc, err := goquery.NewDocumentFromReader(body)
 	if err != nil {
@@ -629,11 +642,31 @@ func calculateRoa(netProfit string, totalAssets string) float64 {
 }
 
 func increaseInRoa(netProfit primitive.A, totalAssets primitive.A) bool {
+	// Ensure there are enough entries in netProfit and totalAssets
+	if len(netProfit) < 3 || len(totalAssets) < 2 {
+		// Not enough data to calculate ROA increase
+		zap.L().Warn("Not enough data to calculate ROA increase")
+		return false // or handle as appropriate
+	}
+
+	// Safely retrieve netProfit values
+	netProfitCurrentYear, ok1 := netProfit[len(netProfit)-2].(string)
+	netProfitPreviousYear, ok2 := netProfit[len(netProfit)-3].(string)
+
+	// Safely retrieve totalAssets values
+	totalAssetsCurrentYear, ok3 := totalAssets[len(totalAssets)-1].(string)
+	totalAssetsPreviousYear, ok4 := totalAssets[len(totalAssets)-2].(string)
+
+	if !ok1 || !ok2 || !ok3 || !ok4 {
+		zap.L().Warn("Failed to retrieve netProfit and totalAssets values")
+		return false // or handle as needed
+	}
+
 	// Calculate the Return on Assets (ROA) for the current year
-	currentYearRoa := calculateRoa(netProfit[len(netProfit)-2].(string), totalAssets[len(totalAssets)-1].(string)) // No TTM in the denominator
+	currentYearRoa := calculateRoa(netProfitCurrentYear, totalAssetsCurrentYear)
 
 	// Calculate the Return on Assets (ROA) for the previous year
-	previousYearRoa := calculateRoa(netProfit[len(netProfit)-3].(string), totalAssets[len(totalAssets)-2].(string)) // No TTM in the denominator
+	previousYearRoa := calculateRoa(netProfitPreviousYear, totalAssetsPreviousYear)
 
 	return currentYearRoa > previousYearRoa
 }
@@ -663,6 +696,13 @@ func GenerateFScore(stock map[string]interface{}) int {
 	return fScore
 }
 
+func safeToFloat(s string) (float64, error) {
+	if s == "" {
+		return 0, fmt.Errorf("input string is empty")
+	}
+	return strconv.ParseFloat(s, 64)
+}
+
 func calculateProfitabilityScore(stock map[string]interface{}) int {
 	score := 0
 
@@ -670,31 +710,45 @@ func calculateProfitabilityScore(stock map[string]interface{}) int {
 	// 1.1 - Is the ROA (Return on Assets) positive?
 	netProfit, err := getNestedArrayField(stock, "profitLoss", "Net Profit +")
 	if err != nil {
+		zap.L().Error("Error fetching Net Profit:", zap.Error(err))
 		return -1
 	}
 	totalAssets, err := getNestedArrayField(stock, "balanceSheet", "Total Assets")
 	if err != nil {
+		zap.L().Error("Error fetching Total Assets:", zap.Error(err))
 		return -1
 	}
 
-	if len(netProfit) > 0 && len(totalAssets) > 0 {
-		roa := calculateRoa(netProfit[len(netProfit)-2].(string), totalAssets[len(totalAssets)-1].(string))
-		if roa > 0 {
-			score++
+	// Ensure arrays have sufficient length
+	if len(netProfit) >= 2 && len(totalAssets) >= 1 {
+		netProfitStr, ok1 := netProfit[len(netProfit)-2].(string)
+		totalAssetsStr, ok2 := totalAssets[len(totalAssets)-1].(string)
+		if ok1 && ok2 && netProfitStr != "" && totalAssetsStr != "" {
+			roa := calculateRoa(netProfitStr, totalAssetsStr)
+			if roa > 0 {
+				score++
+			}
 		}
 	}
 
 	// 1.2 - Positive Cash from Operating Activities in the current year compared to the previous year
 	cashFlowOps, err := getNestedArrayField(stock, "cashFlows", "Cash from Operating Activity +")
 	if err != nil {
+		zap.L().Error("Error fetching Cash Flow from Operating Activities:", zap.Error(err))
 		return -1
 	}
 
-	if len(cashFlowOps) > 1 {
-		currentCashFlow := ToFloat(cashFlowOps[len(cashFlowOps)-1])
-		previousCashFlow := ToFloat(cashFlowOps[len(cashFlowOps)-2])
-		if currentCashFlow > previousCashFlow {
-			score++
+	if len(cashFlowOps) >= 2 {
+		currentCashFlowStr, ok1 := cashFlowOps[len(cashFlowOps)-1].(string)
+		previousCashFlowStr, ok2 := cashFlowOps[len(cashFlowOps)-2].(string)
+		if ok1 && ok2 && currentCashFlowStr != "" && previousCashFlowStr != "" {
+			currentCashFlow, err1 := safeToFloat(currentCashFlowStr)
+			previousCashFlow, err2 := safeToFloat(previousCashFlowStr)
+			if err1 == nil && err2 == nil && currentCashFlow > previousCashFlow {
+				score++
+			} else if err1 != nil || err2 != nil {
+				zap.L().Error("Error converting values to float:", zap.Error(err1), zap.Error(err2))
+			}
 		}
 	}
 
@@ -704,11 +758,17 @@ func calculateProfitabilityScore(stock map[string]interface{}) int {
 	}
 
 	// 1.4 - Higher Cash from Operating Activities than Net Profit (excluding TTM value)
-	if len(cashFlowOps) > 0 && len(netProfit) > 1 {
-		cashFlow := ToFloat(cashFlowOps[len(cashFlowOps)-1])
-		profit := ToFloat(netProfit[len(netProfit)-2])
-		if cashFlow > profit {
-			score++
+	if len(cashFlowOps) >= 1 && len(netProfit) >= 2 {
+		cashFlowStr, ok1 := cashFlowOps[len(cashFlowOps)-1].(string)
+		profitStr, ok2 := netProfit[len(netProfit)-2].(string)
+		if ok1 && ok2 && cashFlowStr != "" && profitStr != "" {
+			cashFlow, err1 := safeToFloat(cashFlowStr)
+			profit, err2 := safeToFloat(profitStr)
+			if err1 == nil && err2 == nil && cashFlow > profit {
+				score++
+			} else if err1 != nil || err2 != nil {
+				zap.L().Error("Error converting values to float:", zap.Error(err1), zap.Error(err2))
+			}
 		}
 	}
 

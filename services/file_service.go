@@ -71,7 +71,11 @@ func (fs *fileService) ParseXLSXFile(ctx *gin.Context, files <-chan string) erro
 		}
 
 		// Create a new reader from the uploaded file
-		file.Seek(0, 0)
+		if _, err := file.Seek(0, 0); err != nil {
+			zap.L().Error("Error seeking file", zap.String("filePath", filePath), zap.Error(err))
+			return err
+		}
+
 		f, err := excelize.OpenReader(file)
 		if err != nil {
 			zap.L().Error("Error parsing XLSX file", zap.String("filePath", filePath), zap.Error(err))

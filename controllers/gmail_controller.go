@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -188,15 +189,73 @@ func fetchEmailDetails(accessToken, emailID string, fileList chan<- string, wg *
 		zap.L().Error("Error parsing JSON: %v", zap.Error(err))
 		return
 	}
+	var subject string
+	for _, header := range emailDetails.Payload.Headers {
+		if header.Name == "Subject" {
+			subject = header.Value
+		}
+	}
 
 	emailBody := extractEmailBody(emailDetails.Payload, sentrySpan)
 
 	if emailBody != "" {
+		if strings.Contains(strings.ToUpper(subject), "SBI") {
+			camsLinkRegex := regexp.MustCompile(`ext=([^&]+)`)
+			matches := camsLinkRegex.FindStringSubmatch(emailBody)
+			if len(matches) < 2 {
+				zap.L().Error("No 'ext' parameter found in the URL", zap.String("emailBody", emailBody))
+				return
+			}
+			ext := matches[1]
+
+			downloadLink := getSBIDownloadLink(ext)
+
+			if downloadLink != "" {
+				downloadXLSXFile(downloadLink, fileList, sentrySpan)
+			}
+			return
+		}
+
 		findRelevantLinks(emailBody, fileList, wg, sentrySpan)
 	} else {
 		zap.L().Info("No valid email body found.")
 	}
 
+}
+func downloadXLSXFile(downloadURL string, fileList chan<- string, sentrySpan *sentry.Span) {
+	client := &http.Client{}
+	resp, err := client.Get(downloadURL)
+	if err != nil {
+		sentrySpan.Status = sentry.SpanStatusFailedPrecondition
+		sentry.CaptureException(err)
+		zap.L().Error("Error downloading .xlsx file", zap.String("url", downloadURL), zap.Error(err))
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		zap.L().Error("Non-OK HTTP status for .xlsx download", zap.String("status", resp.Status), zap.String("url", downloadURL))
+		return
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		sentrySpan.Status = sentry.SpanStatusFailedPrecondition
+		sentry.CaptureException(err)
+		zap.L().Error("Error reading .xlsx file", zap.String("url", downloadURL), zap.Error(err))
+		return
+	}
+
+	filename := uuid.New().String() + ".xlsx"
+	err = os.WriteFile(filename, body, 0644)
+	if err != nil {
+		sentrySpan.Status = sentry.SpanStatusFailedPrecondition
+		sentry.CaptureException(err)
+		zap.L().Error("Error saving .xlsx file", zap.String("filename", filename), zap.Error(err))
+		return
+	}
+
+	fileList <- filename
 }
 
 func extractEmailBody(payload Payload, sentrySpan *sentry.Span) string {
@@ -245,7 +304,6 @@ func findRelevantLinks(emailBody string, fileList chan<- string, wg *sync.WaitGr
 
 	camsLinkRegex := regexp.MustCompile(`https?://delivery\.camsonline\.com[^\s"<>]*`)
 	camsLinks := camsLinkRegex.FindAllString(emailBody, -1)
-
 	for _, link := range kfintechLinks {
 		wg.Add(1)
 		go func(downloadURL string) {
@@ -264,9 +322,74 @@ func findRelevantLinks(emailBody string, fileList chan<- string, wg *sync.WaitGr
 	}
 }
 
+func parseQueryString(query string) map[string]string {
+	result := make(map[string]string)
+	parts := strings.Split(query, "&")
+	for _, part := range parts {
+		keyValue := strings.SplitN(part, "=", 2)
+		if len(keyValue) == 2 {
+			result[keyValue[0]] = keyValue[1]
+		}
+	}
+	return result
+}
+func getSBIDownloadLink(ext string) string {
+	client := &http.Client{}
+	decodedExt, _ := base64.StdEncoding.DecodeString(ext)
+
+	queryMap := parseQueryString(string(decodedExt))
+	fundID := queryMap["FundID"]
+	portfoliotype := queryMap["Portfoliotype"]
+	if fundID == "" || portfoliotype == "" {
+		zap.L().Error("Missing FundID or Portfoliotype in decoded ext", zap.String("ext", ext))
+		return ""
+	}
+
+	postData := map[string]string{
+		"FundId":      fundID,
+		"PSFrequency": portfoliotype,
+	}
+	jsonData, err := json.Marshal(postData)
+	if err != nil {
+		zap.L().Error("Error marshaling POST data", zap.Error(err))
+		return ""
+	}
+
+	req, err := http.NewRequest("POST", "https://www.sbimf.com/ajaxcall/CMS/GetSchemePortfolioSheetsQS", bytes.NewBuffer(jsonData))
+	if err != nil {
+		zap.L().Error("Error creating POST request", zap.Error(err))
+		return ""
+	}
+
+	req.Header.Set("Accept", "application/json, text/javascript, */*; q=0.01")
+	req.Header.Set("Content-Type", "application/json;charset=UTF-8")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Mobile Safari/537.36")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		zap.L().Error("Error sending POST request", zap.Error(err))
+		return ""
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		zap.L().Error("Error reading POST response", zap.Error(err))
+		return ""
+	}
+
+	downloadLink := strings.Trim(strings.TrimSpace(string(body)), "\"")
+	return downloadLink
+}
+
 // Function to download the file from a link
 func downloadFile(url string, fileList chan<- string, sentrySpan *sentry.Span) {
-	resp, err := http.Get(url)
+	client := &http.Client{
+		CheckRedirect: nil,
+	}
+	resp, err := client.Get(url)
+
 	if err != nil {
 		sentrySpan.Status = sentry.SpanStatusFailedPrecondition
 		sentry.CaptureException(err)
@@ -275,12 +398,29 @@ func downloadFile(url string, fileList chan<- string, sentrySpan *sentry.Span) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		zap.L().Error("Non ok-http status", zap.String("status", resp.Status), zap.Error(err))
-		return
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		redirectURL := resp.Header.Get("Location")
+		if redirectURL == "" {
+			zap.L().Error("Redirect with no location header", zap.String("url", url))
+			return
+		}
+
+		zap.L().Info("Redirect found", zap.String("redirectURL", redirectURL))
+
+		resp, err = client.Get(redirectURL)
+		if err != nil {
+			sentry.CaptureException(err)
+			zap.L().Error("Error following redirect", zap.String("url", redirectURL), zap.Error(err))
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			zap.L().Error("Non-OK HTTP status after redirect", zap.String("status", resp.Status), zap.String("url", redirectURL))
+			return
+		}
 	}
 
-	// Read the response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		sentrySpan.Status = sentry.SpanStatusFailedPrecondition
@@ -289,7 +429,6 @@ func downloadFile(url string, fileList chan<- string, sentrySpan *sentry.Span) {
 		return
 	}
 
-	// Generate a unique filename
 	filename := uuid.New().String() + ".xlsx"
 	err = os.WriteFile(filename, body, 0644)
 	if err != nil {
@@ -298,6 +437,6 @@ func downloadFile(url string, fileList chan<- string, sentrySpan *sentry.Span) {
 		zap.L().Error("Error saving file", zap.String("filename", filename), zap.Error(err))
 		return
 	}
-	// Send the filename to the fileList channel
+
 	fileList <- filename
 }
