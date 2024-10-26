@@ -283,6 +283,12 @@ func (fs *fileService) ParseXLSXFile(ctx *gin.Context, files <-chan string) erro
 						}
 					} else {
 						zap.L().Error("No score available for", zap.String("company", instrumentName))
+						event := types.StockbackendEvent{
+							EventType:     "NoScoreAvailable",
+							Data:          map[string]interface{}{"company": instrumentName},
+							CorrelationId: fmt.Sprintf("%s", stockDetail["url"]),
+						}
+						kafka_client.SendMessage(event)
 					}
 
 					// Marshal and write the stockDetail
