@@ -7,12 +7,12 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	kafka_client "stockbackend/clients/kafka"
 	"stockbackend/routes"
 	"strconv"
 	"syscall"
 	"time"
 
-	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/getsentry/sentry-go"
 	sentrygin "github.com/getsentry/sentry-go/gin"
 	"github.com/gin-gonic/gin"
@@ -68,6 +68,9 @@ func GracefulShutdown(server *http.Server, ticker *time.Ticker) {
 		// Stop the ticker
 		ticker.Stop()
 
+		// Stop the kafka producer
+		kafka_client.KafkaProducer.Close()
+
 		// Create a context with a timeout for shutdown
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -82,13 +85,19 @@ func GracefulShutdown(server *http.Server, ticker *time.Ticker) {
 }
 
 func setupSentry() {
+	sentryDsn, sentryActive := os.LookupEnv("SENTRY_DSN")
+	if !sentryActive || sentryDsn == "" {
+		zap.L().Info("Sentry not active")
+		return
+	}
+
 	tracesSampleRate, err := strconv.ParseFloat(os.Getenv("SENTRY_SAMPLE_RATE"), 64)
 	if err != nil {
 		tracesSampleRate = 1.0
 	}
 
 	if err := sentry.Init(sentry.ClientOptions{
-		Dsn:           os.Getenv("SENTRY_DSN"),
+		Dsn:           sentryDsn,
 		Environment:   os.Getenv("ENVIRONMENT"),
 		EnableTracing: true,
 		Debug:         true,
@@ -101,48 +110,13 @@ func setupSentry() {
 	}
 }
 
-func setupKafka() {
-
-	prodcuer, err := kafka.NewProducer(&kafka.ConfigMap{
-		"bootstrap.servers": os.Getenv("KAFKA_BOOTSTRAPSERVERS"),
-	})
-	if err != nil {
-		zap.L().Error("Kafka initialization failed: ", zap.Any("error", err.Error()))
-	}
-
-	defer prodcuer.Close()
-
-	// Delivery report handler for produced messages
-	go func() {
-		for e := range prodcuer.Events() {
-			switch ev := e.(type) {
-			case *kafka.Message:
-				if ev.TopicPartition.Error != nil {
-					zap.L().Error("Kafka Delivery failed: ", zap.Any("error", ev.TopicPartition.Error.Error()))
-				} else {
-					zap.L().Info("Delivered message to %v\n", ev.TopicPartition)
-				}
-			}
-		}
-	}()
-
-	// Produce messages to topic (asynchronously)
-	topic := "myTopic"
-	for _, word := range []string{"Welcome", "to", "the", "Confluent", "Kafka", "Golang", "client"} {
-		prodcuer.Produce(&kafka.Message{
-			TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
-			Value:          []byte(word),
-		}, nil)
-	}
-
-	// Wait for message deliveries before shutting down
-	prodcuer.Flush(15 * 1000)
-}
-
 func main() {
-	config := zap.NewProductionConfig()
-	config.Level = zap.NewAtomicLevelAt(zap.ErrorLevel)
-	logger, _ := config.Build()
+
+	logger, err := zap.NewProductionConfig().Build()
+	if err != nil {
+		panic("oh noes!")
+	}
+
 	zap.ReplaceGlobals(logger)
 
 	setupSentry()
@@ -182,6 +156,12 @@ func startTicker() *time.Ticker {
 	go func() {
 		for t := range ticker.C {
 			zap.L().Info("Tick at: ", zap.String("time", t.String()))
+
+			tickerEnabled, err := strconv.ParseBool(os.Getenv("TICKER_ENABLED"))
+			if err != nil || !tickerEnabled {
+				zap.L().Info("Ticker call for keepServerRunning disabled")
+				return
+			}
 
 			cmd := exec.Command("curl", "https://stock-backend-hz83.onrender.com/api/keepServerRunning")
 			output, err := cmd.CombinedOutput()

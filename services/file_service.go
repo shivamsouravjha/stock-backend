@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"os"
 	"stockbackend/clients/http_client"
+	kafka_client "stockbackend/clients/kafka"
 	mongo_client "stockbackend/clients/mongo"
+	"stockbackend/types"
+
 	"stockbackend/utils/constants"
 	"stockbackend/utils/helpers"
 	"strings"
@@ -30,10 +33,7 @@ type fileService struct{}
 var FileService FileServiceI = &fileService{}
 
 func (fs *fileService) ParseXLSXFile(ctx *gin.Context, files <-chan string) error {
-	cld, err := cloudinary.NewFromURL(os.Getenv("CLOUDINARY_URL"))
-	if err != nil {
-		return fmt.Errorf("error initializing Cloudinary: %w", err)
-	}
+
 	for filePath := range files {
 		file, err := os.Open(filePath)
 		if err != nil {
@@ -47,21 +47,28 @@ func (fs *fileService) ParseXLSXFile(ctx *gin.Context, files <-chan string) erro
 		}
 		defer file.Close()
 
-		// Generate a UUID for the filename
-		uuid := uuid.New().String()
-		cloudinaryFilename := uuid + ".xlsx"
+		cloudinaryUrl, useCloudinary := os.LookupEnv("CLOUDINARY_URL")
+		if useCloudinary {
+			// Generate a UUID for the filename
+			uuid := uuid.New().String()
+			cloudinaryFilename := uuid + ".xlsx"
 
-		// Upload file to Cloudinary
-		uploadResult, err := cld.Upload.Upload(ctx, file, uploader.UploadParams{
-			PublicID: cloudinaryFilename,
-			Folder:   "xlsx_uploads",
-		})
-		if err != nil {
-			zap.L().Error("Error uploading file to Cloudinary", zap.String("filePath", filePath), zap.Error(err))
-			continue
+			cld, err := cloudinary.NewFromURL(cloudinaryUrl)
+			if err != nil {
+				return fmt.Errorf("error initializing Cloudinary: %w", err)
+			}
+
+			// Upload file to Cloudinary
+			uploadResult, err := cld.Upload.Upload(ctx, file, uploader.UploadParams{
+				PublicID: cloudinaryFilename,
+				Folder:   "xlsx_uploads",
+			})
+			if err != nil {
+				zap.L().Error("Error uploading file to Cloudinary", zap.String("filePath", filePath), zap.Error(err))
+				continue
+			}
+			zap.L().Info("File uploaded to Cloudinary", zap.String("filePath", filePath), zap.String("url", uploadResult.SecureURL))
 		}
-
-		zap.L().Info("File uploaded to Cloudinary", zap.String("filePath", filePath), zap.String("url", uploadResult.SecureURL))
 
 		// Create a new reader from the uploaded file
 		file.Seek(0, 0)
@@ -199,6 +206,12 @@ func (fs *fileService) ParseXLSXFile(ctx *gin.Context, files <-chan string) erro
 					err = collection.FindOne(context.TODO(), textSearchFilter, findOptions).Decode(&result)
 					if err != nil {
 						zap.L().Error("Error finding document", zap.Error(err))
+						event := types.StockbackendEvent{
+							EventType:     "NoMongoDbDocFound",
+							Data:          map[string]interface{}{"queryString": queryString},
+							CorrelationId: uuid.New().String(),
+						}
+						kafka_client.SendMessage(event)
 						continue
 					}
 
@@ -222,6 +235,12 @@ func (fs *fileService) ParseXLSXFile(ctx *gin.Context, files <-chan string) erro
 							results, err := http_client.SearchCompany(instrumentName)
 							if err != nil || len(results) == 0 {
 								zap.L().Error("No company found", zap.Error(err))
+								event := types.StockbackendEvent{
+									EventType:     "NoCompanyFound",
+									Data:          stockDetail,
+									CorrelationId: fmt.Sprintf("%s", stockDetail["url"]),
+								}
+								kafka_client.SendMessage(event)
 								continue
 							}
 							data, err := helpers.FetchCompanyData(results[0].URL)
