@@ -148,7 +148,7 @@ func startTicker() *time.Ticker {
 		for t := range ticker.C {
 			zap.L().Info("Tick at: ", zap.String("time", t.String()))
 
-			cmd := exec.Command("curl", "https://stock-backend-hz83.onrender.com/api/keepServerRunning")
+			cmd := exec.Command("curl", "https://free-fokat.onrender.com/api/keepServerRunning")
 			output, err := cmd.CombinedOutput()
 			if err != nil {
 				zap.L().Error("Error running curl: ", zap.Any("error", err.Error()))
