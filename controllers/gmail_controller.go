@@ -2,7 +2,6 @@ package controllers
 
 import (
 	"bytes"
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -68,12 +67,8 @@ var GmailController GmailControllerI = &gmailController{}
 
 func (g *gmailController) GetEmails(ctx *gin.Context) {
 	defer sentry.Recover()
-	transaction := sentry.TransactionFromContext(ctx)
-	if transaction != nil {
-		transaction.Name = "GetEmails"
-	}
 
-	sentrySpan := sentry.StartSpan(context.TODO(), "GetEmails")
+	sentrySpan := sentry.StartSpan(ctx.Request.Context(), "GetEmails", sentry.WithTransactionName("GetEmails"))
 	defer sentrySpan.Finish()
 
 	accessToken := ctx.PostForm("token")
@@ -143,7 +138,7 @@ func (g *gmailController) GetEmails(ctx *gin.Context) {
 	}()
 
 	// Process XLSX files
-	err = services.FileService.ParseXLSXFile(ctx, fileList)
+	err = services.FileService.ParseXLSXFile(ctx, fileList, sentrySpan.Context())
 	if err != nil {
 		sentrySpan.Status = sentry.SpanStatusFailedPrecondition
 		sentry.CaptureException(err)

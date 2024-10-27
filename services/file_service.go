@@ -13,6 +13,7 @@ import (
 
 	"github.com/cloudinary/cloudinary-go/v2"
 	"github.com/cloudinary/cloudinary-go/v2/api/uploader"
+	"github.com/getsentry/sentry-go"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/xuri/excelize/v2"
@@ -22,21 +23,28 @@ import (
 )
 
 type FileServiceI interface {
-	ParseXLSXFile(ctx *gin.Context, files <-chan string) error
+	ParseXLSXFile(ctx *gin.Context, files <-chan string, sentryCtx context.Context) error
 }
 
 type fileService struct{}
 
 var FileService FileServiceI = &fileService{}
 
-func (fs *fileService) ParseXLSXFile(ctx *gin.Context, files <-chan string) error {
+func (fs *fileService) ParseXLSXFile(ctx *gin.Context, files <-chan string, sentryCtx context.Context) error {
+	defer sentry.Recover()
+	span := sentry.StartSpan(sentryCtx, "[DAO] ParseXLSXFile")
+	defer span.Finish()
+
 	cld, err := cloudinary.NewFromURL(os.Getenv("CLOUDINARY_URL"))
 	if err != nil {
+		sentry.CaptureException(err)
+		span.Status = sentry.SpanStatusInternalError
 		return fmt.Errorf("error initializing Cloudinary: %w", err)
 	}
 	for filePath := range files {
 		file, err := os.Open(filePath)
 		if err != nil {
+			sentry.CaptureException(err)
 			zap.L().Error("Error opening file", zap.String("filePath", filePath), zap.Error(err))
 			if err := os.Remove(filePath); err != nil {
 				zap.L().Error("Error removing file", zap.String("filePath", filePath), zap.Error(err))
@@ -50,14 +58,16 @@ func (fs *fileService) ParseXLSXFile(ctx *gin.Context, files <-chan string) erro
 		// Generate a UUID for the filename
 		uuid := uuid.New().String()
 		cloudinaryFilename := uuid + ".xlsx"
-
+		dbSpan1 := sentry.StartSpan(span.Context(), "[DB] Upload XLSX File")
 		// Upload file to Cloudinary
 		uploadResult, err := cld.Upload.Upload(ctx, file, uploader.UploadParams{
 			PublicID: cloudinaryFilename,
 			Folder:   "xlsx_uploads",
 		})
+		dbSpan1.Finish()
 		if err != nil {
 			zap.L().Error("Error uploading file to Cloudinary", zap.String("filePath", filePath), zap.Error(err))
+			sentry.CaptureException(err)
 			continue
 		}
 
@@ -66,11 +76,13 @@ func (fs *fileService) ParseXLSXFile(ctx *gin.Context, files <-chan string) erro
 		// Create a new reader from the uploaded file
 		if _, err := file.Seek(0, 0); err != nil {
 			zap.L().Error("Error seeking file", zap.String("filePath", filePath), zap.Error(err))
+			sentry.CaptureException(err)
 			return err
 		}
 
 		f, err := excelize.OpenReader(file)
 		if err != nil {
+			sentry.CaptureException(err)
 			zap.L().Error("Error parsing XLSX file", zap.String("filePath", filePath), zap.Error(err))
 			if err := os.Remove(filePath); err != nil {
 				zap.L().Error("Error removing file", zap.String("filePath", filePath), zap.Error(err))
@@ -90,6 +102,7 @@ func (fs *fileService) ParseXLSXFile(ctx *gin.Context, files <-chan string) erro
 			// Get all the rows in the sheet
 			rows, err := f.GetRows(sheet)
 			if err != nil {
+				sentry.CaptureException(err)
 				zap.L().Error("Error reading rows from sheet", zap.String("sheet", sheet), zap.Error(err))
 				continue
 			}
@@ -188,7 +201,6 @@ func (fs *fileService) ParseXLSXFile(ctx *gin.Context, files <-chan string) erro
 
 					// MongoDB collection
 					collection := mongo_client.Client.Database(os.Getenv("DATABASE")).Collection(os.Getenv("COLLECTION"))
-
 					// Set find options
 					findOptions := options.FindOne()
 					findOptions.SetProjection(bson.M{
@@ -200,11 +212,14 @@ func (fs *fileService) ParseXLSXFile(ctx *gin.Context, files <-chan string) erro
 
 					// Perform the search
 					var result bson.M
+					dbSpan3 := sentry.StartSpan(span.Context(), "[DB] FindOne")
 					err = collection.FindOne(context.TODO(), textSearchFilter, findOptions).Decode(&result)
 					if err != nil {
 						zap.L().Error("Error finding document", zap.Error(err))
+						sentry.CaptureException(err)
 						continue
 					}
+					dbSpan3.Finish()
 
 					// Process based on the score
 					if score, ok := result["score"].(float64); ok {
@@ -223,14 +238,20 @@ func (fs *fileService) ParseXLSXFile(ctx *gin.Context, files <-chan string) erro
 							}
 						} else {
 							// zap.L().Info("score less than 1", zap.Float64("score", score))
+							dbSpan4 := sentry.StartSpan(span.Context(), "[DB] SearchCompany")
 							results, err := http_client.SearchCompany(instrumentName)
 							if err != nil || len(results) == 0 {
 								zap.L().Error("No company found", zap.Error(err))
+								sentry.CaptureException(err)
 								continue
 							}
+							dbSpan4.Finish()
+							dbSpan5 := sentry.StartSpan(span.Context(), "[DB] FetchCompanyData")
 							data, err := helpers.FetchCompanyData(results[0].URL)
+							dbSpan5.Finish()
 							if err != nil {
 								zap.L().Error("Error fetching company data", zap.Error(err))
+								sentry.CaptureException(err)
 								continue
 							}
 							// Update MongoDB with fetched data
@@ -257,11 +278,14 @@ func (fs *fileService) ParseXLSXFile(ctx *gin.Context, files <-chan string) erro
 									"peers":               data["peers"],
 								},
 							}
+							dbSpan6 := sentry.StartSpan(span.Context(), "[DB] UpdateOne")
 							updateOptions := options.Update().SetUpsert(true)
 							filter := bson.M{"name": results[0].Name}
 							_, err = collection.UpdateOne(context.TODO(), filter, update, updateOptions)
+							dbSpan6.Finish()
 							if err != nil {
 								zap.L().Error("Failed to update document", zap.Error(err))
+								sentry.CaptureException(err)
 							} else {
 								zap.L().Info("Successfully updated document", zap.String("company", results[0].Name))
 							}
@@ -274,12 +298,14 @@ func (fs *fileService) ParseXLSXFile(ctx *gin.Context, files <-chan string) erro
 					stockDataMarshal, err := json.Marshal(stockDetail)
 					if err != nil {
 						zap.L().Error("Error marshalling data", zap.Error(err))
+						sentry.CaptureException(err)
 						continue
 					}
 
 					_, err = ctx.Writer.Write(append(stockDataMarshal, '\n')) // Send each stockDetail as JSON with a newline separator
 
 					if err != nil {
+						sentry.CaptureException(err)
 						zap.L().Error("Error writing data", zap.Error(err))
 						break
 					}
@@ -288,6 +314,7 @@ func (fs *fileService) ParseXLSXFile(ctx *gin.Context, files <-chan string) erro
 			}
 		}
 		if err := os.Remove(filePath); err != nil {
+			sentry.CaptureException(err)
 			zap.L().Error("Error removing file", zap.String("filePath", filePath), zap.Error(err))
 		} else {
 			zap.L().Info("File removed successfully", zap.String("filePath", filePath))
