@@ -176,13 +176,14 @@ func uploadToCloudinary(fileURL string) {
 	month := extractMonth(publicID)
 	fileUUID := uuid.New().String()
 	document := bson.M{
+		"_id":            fileUUID,
 		"month":          month,
 		"completeName":   publicID,
 		"cloudinaryLink": resp.SecureURL,
-		"id":             fileUUID,
+		"fund_house":     "nippon",
 	}
 
-	collection := mongo_client.Client.Database(os.Getenv("DATABASE")).Collection(os.Getenv("COLLECTION"))
+	collection := mongo_client.Client.Database(os.Getenv("DATABASE_NAME")).Collection(os.Getenv("COLLECTION_NAME"))
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_, err = collection.InsertOne(ctx, document)
