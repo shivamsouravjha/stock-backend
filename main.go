@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"os/signal"
 	kafka_client "stockbackend/clients/kafka"
+	rabbitmq_client "stockbackend/clients/rabbitmq"
 	"stockbackend/middleware"
 	"stockbackend/routes"
 	"stockbackend/services"
@@ -71,6 +72,7 @@ func GracefulShutdown(server *http.Server, ticker, rankUpdater *time.Ticker) {
 		ticker.Stop()
 
 		// Stop the kafka producer
+		rabbitmq_client.Close()
 		kafka_client.KafkaProducer.Close()
 		rankUpdater.Stop()
 		// Create a context with a timeout for shutdown

@@ -39,6 +39,14 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_NUM_PARTITIONS: 3
+  queue:
+    image: rabbitmq:3-management
+    container_name: queue
+    ports:
+      - 5672:5672
+      - 15672:15672 # management ui
+    networks:
+      - backend
 volumes:
   mongodb-data:
 networks:

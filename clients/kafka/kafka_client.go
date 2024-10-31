@@ -71,7 +71,7 @@ func init() {
 				if ev.TopicPartition.Error != nil {
 					zap.L().Error("Kafka Delivery failed: ", zap.Any("error", ev.TopicPartition.Error.Error()))
 				} else {
-					zap.L().Sugar().Infof("Delivered message to %s", ev.TopicPartition.Topic)
+					zap.L().Sugar().Infof("Delivered message to %s", *ev.TopicPartition.Topic)
 				}
 			}
 		}
