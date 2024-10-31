@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"os"
 	"stockbackend/clients/http_client"
+	kafka_client "stockbackend/clients/kafka"
 	mongo_client "stockbackend/clients/mongo"
+	rabbitmq_client "stockbackend/clients/rabbitmq"
+	"stockbackend/types"
 	"stockbackend/utils/constants"
 	"stockbackend/utils/helpers"
 	"strings"
@@ -35,12 +38,6 @@ func (fs *fileService) ParseXLSXFile(ctx *gin.Context, files <-chan string, sent
 	span := sentry.StartSpan(sentryCtx, "[DAO] ParseXLSXFile")
 	defer span.Finish()
 
-	cld, err := cloudinary.NewFromURL(os.Getenv("CLOUDINARY_URL"))
-	if err != nil {
-		sentry.CaptureException(err)
-		span.Status = sentry.SpanStatusInternalError
-		return fmt.Errorf("error initializing Cloudinary: %w", err)
-	}
 	for filePath := range files {
 		file, err := os.Open(filePath)
 		if err != nil {
@@ -55,23 +52,34 @@ func (fs *fileService) ParseXLSXFile(ctx *gin.Context, files <-chan string, sent
 		}
 		defer file.Close()
 
-		// Generate a UUID for the filename
-		uuid := uuid.New().String()
-		cloudinaryFilename := uuid + ".xlsx"
-		dbSpan1 := sentry.StartSpan(span.Context(), "[DB] Upload XLSX File")
-		// Upload file to Cloudinary
-		uploadResult, err := cld.Upload.Upload(ctx, file, uploader.UploadParams{
-			PublicID: cloudinaryFilename,
-			Folder:   "xlsx_uploads",
-		})
-		dbSpan1.Finish()
-		if err != nil {
-			zap.L().Error("Error uploading file to Cloudinary", zap.String("filePath", filePath), zap.Error(err))
-			sentry.CaptureException(err)
-			continue
-		}
+		cloudinaryUrl, useCloudinary := os.LookupEnv("CLOUDINARY_URL")
+		if useCloudinary {
 
-		zap.L().Info("File uploaded to Cloudinary", zap.String("filePath", filePath), zap.String("url", uploadResult.SecureURL))
+			cld, err := cloudinary.NewFromURL(cloudinaryUrl)
+			if err != nil {
+				sentry.CaptureException(err)
+				span.Status = sentry.SpanStatusInternalError
+				return fmt.Errorf("error initializing Cloudinary: %w", err)
+			}
+
+			// Generate a UUID for the filename
+			cloudinaryFilename := uuid.New().String() + ".xlsx"
+			dbSpan1 := sentry.StartSpan(span.Context(), "[DB] Upload XLSX File")
+			// Upload file to Cloudinary
+			uploadResult, err := cld.Upload.Upload(ctx, file, uploader.UploadParams{
+				PublicID: cloudinaryFilename,
+				Folder:   "xlsx_uploads",
+			})
+			dbSpan1.Finish()
+			if err != nil {
+				zap.L().Error("Error uploading file to Cloudinary", zap.String("filePath", filePath), zap.Error(err))
+				sentry.CaptureException(err)
+				continue
+			}
+
+			zap.L().Info("File uploaded to Cloudinary", zap.String("filePath", filePath), zap.String("url", uploadResult.SecureURL))
+
+		}
 
 		// Create a new reader from the uploaded file
 		if _, err := file.Seek(0, 0); err != nil {
@@ -217,6 +225,13 @@ func (fs *fileService) ParseXLSXFile(ctx *gin.Context, files <-chan string, sent
 					if err != nil {
 						zap.L().Error("Error finding document", zap.Error(err))
 						sentry.CaptureException(err)
+						event := types.StockbackendEvent{
+							EventType:     "NoMongoDbDocFound",
+							Data:          map[string]interface{}{"queryString": queryString},
+							CorrelationId: uuid.New().String(),
+						}
+						kafka_client.SendMessage(event)
+						rabbitmq_client.SendMessage(event)
 						continue
 					}
 					dbSpan3.Finish()
@@ -230,7 +245,8 @@ func (fs *fileService) ParseXLSXFile(ctx *gin.Context, files <-chan string, sent
 							stockDetail["marketCap"] = helpers.GetMarketCapCategory(fmt.Sprintf("%v", result["marketCap"]))
 							stockDetail["stockRate"] = helpers.RateStock(result)
 
-							stockFScore := helpers.GenerateFScore(result)
+							//stockFScore := helpers.GenerateFScore(result)
+							stockFScore := -1
 							if stockFScore < 0 {
 								stockDetail["fScore"] = "Not Available"
 							} else {
@@ -243,6 +259,13 @@ func (fs *fileService) ParseXLSXFile(ctx *gin.Context, files <-chan string, sent
 							if err != nil || len(results) == 0 {
 								zap.L().Error("No company found", zap.Error(err))
 								sentry.CaptureException(err)
+								event := types.StockbackendEvent{
+									EventType:     "NoCompanyFound",
+									Data:          stockDetail,
+									CorrelationId: fmt.Sprintf("%s", stockDetail["url"]),
+								}
+								kafka_client.SendMessage(event)
+								rabbitmq_client.SendMessage(event)
 								continue
 							}
 							dbSpan4.Finish()

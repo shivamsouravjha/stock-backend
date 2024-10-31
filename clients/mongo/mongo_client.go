@@ -16,7 +16,6 @@ var (
 
 func init() {
 	zap.L().Info("MONGO_URI: ", zap.String("uri", os.Getenv("MONGO_URI")))
-	zap.L().Info("CLOUDINARY_URL", zap.String("uri", os.Getenv("CLOUDINARY_URL")))
 
 	serverAPI := options.ServerAPI(options.ServerAPIVersion1)
 	mongoURI := os.Getenv("MONGO_URI")
