@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"os"
 	"stockbackend/clients/http_client"
-  kafka_client "stockbackend/clients/kafka"
+	kafka_client "stockbackend/clients/kafka"
 	mongo_client "stockbackend/clients/mongo"
+	"stockbackend/types"
 	"stockbackend/utils/constants"
 	"stockbackend/utils/helpers"
 	"strings"
@@ -57,8 +58,7 @@ func (fs *fileService) ParseXLSXFile(ctx *gin.Context, files <-chan string, sent
 		defer file.Close()
 
 		// Generate a UUID for the filename
-		uuid := uuid.New().String()
-		cloudinaryFilename := uuid + ".xlsx"
+		cloudinaryFilename := uuid.New().String() + ".xlsx"
 		dbSpan1 := sentry.StartSpan(span.Context(), "[DB] Upload XLSX File")
 		// Upload file to Cloudinary
 		uploadResult, err := cld.Upload.Upload(ctx, file, uploader.UploadParams{
@@ -218,7 +218,7 @@ func (fs *fileService) ParseXLSXFile(ctx *gin.Context, files <-chan string, sent
 					if err != nil {
 						zap.L().Error("Error finding document", zap.Error(err))
 						sentry.CaptureException(err)
-            event := types.StockbackendEvent{
+						event := types.StockbackendEvent{
 							EventType:     "NoMongoDbDocFound",
 							Data:          map[string]interface{}{"queryString": queryString},
 							CorrelationId: uuid.New().String(),
@@ -250,7 +250,7 @@ func (fs *fileService) ParseXLSXFile(ctx *gin.Context, files <-chan string, sent
 							if err != nil || len(results) == 0 {
 								zap.L().Error("No company found", zap.Error(err))
 								sentry.CaptureException(err)
-                event := types.StockbackendEvent{
+								event := types.StockbackendEvent{
 									EventType:     "NoCompanyFound",
 									Data:          stockDetail,
 									CorrelationId: fmt.Sprintf("%s", stockDetail["url"]),
