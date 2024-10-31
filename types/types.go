@@ -18,3 +18,11 @@ type Company struct {
 	Name string `json:"name"`
 	URL  string `json:"url"`
 }
+
+type StockbackendEvent struct {
+	EventType     string                 `json:"eventType"`
+	EventId       string                 `json:"eventId"`
+	Timestamp     string                 `json:"timestamp"`
+	Data          map[string]interface{} `json:"data"`
+	CorrelationId string                 `json:"correlationId"`
+}

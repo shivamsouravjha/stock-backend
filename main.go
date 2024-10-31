@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	kafka_client "stockbackend/clients/kafka"
 	"stockbackend/middleware"
 	"stockbackend/routes"
 	"stockbackend/services"
@@ -68,6 +69,9 @@ func GracefulShutdown(server *http.Server, ticker, rankUpdater *time.Ticker) {
 
 		// Stop the ticker
 		ticker.Stop()
+
+		// Stop the kafka producer
+		kafka_client.KafkaProducer.Close()
 		rankUpdater.Stop()
 		// Create a context with a timeout for shutdown
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -83,13 +87,19 @@ func GracefulShutdown(server *http.Server, ticker, rankUpdater *time.Ticker) {
 }
 
 func setupSentry() {
+	sentryDsn, sentryActive := os.LookupEnv("SENTRY_DSN")
+	if !sentryActive || sentryDsn == "" {
+		zap.L().Info("Sentry not active")
+		return
+	}
+
 	tracesSampleRate, err := strconv.ParseFloat(os.Getenv("SENTRY_SAMPLE_RATE"), 64)
 	if err != nil {
 		tracesSampleRate = 1.0
 	}
 
 	if err := sentry.Init(sentry.ClientOptions{
-		Dsn:           os.Getenv("SENTRY_DSN"),
+		Dsn:           sentryDsn,
 		Environment:   os.Getenv("ENVIRONMENT"),
 		EnableTracing: true,
 		Debug:         true,
@@ -103,9 +113,12 @@ func setupSentry() {
 }
 
 func main() {
-	config := zap.NewProductionConfig()
-	config.Level = zap.NewAtomicLevelAt(zap.ErrorLevel)
-	logger, _ := config.Build()
+
+	logger, err := zap.NewProductionConfig().Build()
+	if err != nil {
+		panic("oh noes!")
+	}
+
 	zap.ReplaceGlobals(logger)
 
 	setupSentry()
@@ -147,6 +160,12 @@ func startTicker() *time.Ticker {
 	go func() {
 		for t := range ticker.C {
 			zap.L().Info("Tick at: ", zap.String("time", t.String()))
+
+			tickerEnabled, err := strconv.ParseBool(os.Getenv("TICKER_ENABLED"))
+			if err != nil || !tickerEnabled {
+				zap.L().Info("Ticker call for keepServerRunning disabled")
+				return
+			}
 
 			cmd := exec.Command("curl", "https://free-fokat.onrender.com/api/keepServerRunning")
 			output, err := cmd.CombinedOutput()
