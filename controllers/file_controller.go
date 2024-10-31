@@ -1,7 +1,6 @@
 package controllers
 
 import (
-	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -21,12 +20,7 @@ var FileController FileControllerI = &fileController{}
 
 func (f *fileController) ParseXLSXFile(ctx *gin.Context) {
 	defer sentry.Recover()
-	transaction := sentry.TransactionFromContext(ctx)
-	if transaction != nil {
-		transaction.Name = "ParseXLSXFile"
-	}
-
-	span := sentry.StartSpan(context.TODO(), "ParseXLSXFile")
+	span := sentry.StartSpan(ctx.Request.Context(), "[GIN] ParseXLSXFile", sentry.WithTransactionName("ParseXLSXFile"))
 	defer span.Finish()
 
 	// Parse the form and retrieve the uploaded files
@@ -91,7 +85,7 @@ func (f *fileController) ParseXLSXFile(ctx *gin.Context) {
 	ctx.Writer.Header().Set("Cache-Control", "no-cache")
 	ctx.Writer.Header().Set("Connection", "keep-alive")
 
-	err = services.FileService.ParseXLSXFile(ctx, savedFilePaths)
+	err = services.FileService.ParseXLSXFile(ctx, savedFilePaths, span.Context())
 	if err != nil {
 		span.Status = sentry.SpanStatusFailedPrecondition
 		sentry.CaptureException(err)
