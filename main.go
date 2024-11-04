@@ -116,6 +116,7 @@ func main() {
 	router.Use(sentrygin.New(sentrygin.Options{}))
 	router.Use(CORSMiddleware())
 
+	services.UpdateFunds()
 	ticker := startTicker()
 	rankUpdater := startRankUpdater()
 	routes.Routes(router)

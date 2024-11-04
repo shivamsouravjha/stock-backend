@@ -1,9 +1,9 @@
-package main
+package services
 
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -42,7 +42,7 @@ func setupCheck() {
 	}
 }
 
-func main() {
+func UpdateFunds() {
 	setupCheck()
 	scheduler := cron.New()
 
@@ -103,7 +103,7 @@ func performUploadTask() {
 	}
 	defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.Println("Error reading response body:", err)
 		return
@@ -136,7 +136,7 @@ func setRequestHeaders(req *http.Request) {
 func extractPortfolioLinks(htmlContent string) []string {
 	assert(len(htmlContent) == 0, "extractPortfolioLinks len(htmlContent) == 0")
 
-	re := regexp.MustCompile(`Monthly portfolio for the month end.*?<a[^>]+href="([^"]+)"`)
+	re := regexp.MustCompile(`Monthly portfolio for the month *?<a[^>]+href="([^"]+)"`)
 	matches := re.FindAllStringSubmatch(htmlContent, -1)
 
 	assert(len(matches) == 0, "extractPortfolioLinks len(matches) == 0")
