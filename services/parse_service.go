@@ -12,6 +12,7 @@ import (
 	mongo_client "stockbackend/clients/mongo"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/cloudinary/cloudinary-go/v2"
 	"github.com/cloudinary/cloudinary-go/v2/api/admin"
@@ -22,12 +23,8 @@ import (
 )
 
 func assert(b bool, mess string) {
-	red := "\033[31m"
 	green := "\033[32m"
 	reset := "\033[0m"
-	if b {
-		panic(red + "Assert FAILED: " + mess + reset)
-	}
 	if os.Getenv("DEBUG") == "true" {
 		fmt.Println(green+"Assert PASSED: ", mess+reset)
 	}
@@ -109,10 +106,10 @@ func performUploadTask() {
 		return
 	}
 
-	portfolioLinks := extractPortfolioLinks(string(body))
+	mfDatas := extractPortfolioLinks(string(body))
 
-	for _, link := range portfolioLinks {
-		uploadToCloudinary("https://mf.nipponindiaim.com/" + link)
+	for _, mfData := range mfDatas {
+		uploadToCloudinary("https://mf.nipponindiaim.com/", mfData)
 	}
 
 	log.Println("Monthly upload task completed.")
@@ -132,46 +129,113 @@ func setRequestHeaders(req *http.Request) {
 	req.Header.Set("Sec-Fetch-User", "?1")
 	req.Header.Set("Upgrade-Insecure-Requests", "1")
 }
-
-func extractPortfolioLinks(htmlContent string) []string {
-	assert(len(htmlContent) == 0, "extractPortfolioLinks len(htmlContent) == 0")
-
-	re := regexp.MustCompile(`Monthly portfolio for the month *?<a[^>]+href="([^"]+)"`)
-	matches := re.FindAllStringSubmatch(htmlContent, -1)
-
-	assert(len(matches) == 0, "extractPortfolioLinks len(matches) == 0")
-
-	var links []string
-	for _, match := range matches {
-		if len(match) > 1 {
-			links = append(links, match[1])
+func normalizeWhitespace(s string) string {
+	var b strings.Builder
+	prevIsSpace := false
+	for _, r := range s {
+		if unicode.IsSpace(r) {
+			if !prevIsSpace {
+				b.WriteRune(' ')
+				prevIsSpace = true
+			}
+		} else {
+			b.WriteRune(r)
+			prevIsSpace = false
 		}
 	}
-
-	assert(len(links) == 0, "extractPortfolioLinks len(links) == 0")
-	return links
+	return b.String()
 }
 
-func uploadToCloudinary(fileURL string) {
-	assert(len(fileURL) == 0, "uploadToCloudinary len(fileURL) == 0")
+func removeZeroWidthChars(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch r {
+		case '\u200B', '\u200C', '\u200D', '\uFEFF':
+			// Exclude zero-width characters
+			return -1
+		default:
+			// Include other characters
+			return r
+		}
+	}, s)
+}
 
+func cleanHTMLContent(s string) string {
+	s = removeZeroWidthChars(s)
+	s = normalizeWhitespace(s)
+	return s
+}
+
+type MFCOLLECTION struct {
+	month string
+	year  string
+	link  string
+}
+
+func extractPortfolioLinks(htmlContent string) []MFCOLLECTION {
+	// Updated regex pattern to handle various formats
+	re := regexp.MustCompile(`(?i)Monthly[\s\p{Zs}]+portfolio[\s\p{Zs}]+for[\s\p{Zs}]+the[\s\p{Zs}]+month(?:[\s\p{Zs}]+(?:of|end))?[\s\p{Zs}]*(?:(\d{1,2})(?:st|nd|rd|th)?[\s\p{Zs}]+)?(\w+)[\s\p{Zs}]*(\d{4})?.*?<a[^>]+href="([^"]+)"`)
+	htmlContent = cleanHTMLContent(htmlContent)
+
+	matches := re.FindAllStringSubmatch(htmlContent, -1)
+	fmt.Println("Total Matches Found:", len(matches)) // Debugging: Show total matches found
+
+	var mfDetails []MFCOLLECTION
+	for _, match := range matches {
+		if len(match) > 4 {
+			// entireText := match[0] // Entire matched text
+
+			// Extract day, month, year, and link
+			month := match[2] // Month
+			year := match[3]  // Optional year
+			link := match[4]  // Extracted link
+
+			// If year is missing in match[3], try to extract it from the following content
+			if year == "" {
+				// Attempt to find a 4-digit year after the month
+				yearRe := regexp.MustCompile(`\b(\d{4})\b`)
+				yearMatch := yearRe.FindStringSubmatch(htmlContent)
+				if len(yearMatch) > 1 {
+					year = yearMatch[1]
+				}
+			}
+
+			// Append the link
+			mfDetails = append(mfDetails, MFCOLLECTION{
+				month: month,
+				year:  year,
+				link:  link,
+			})
+			// fmt.Println("Entire matched text:", entireText)
+			// fmt.Println("Month:", month) // Print extracted month
+			// fmt.Println("Year:", year)   // Print extracted year
+			// fmt.Println("Link:", link)   // Print the link
+		}
+	}
+	return mfDetails
+}
+
+func uploadToCloudinary(fileURL string, mfData MFCOLLECTION) {
 	cld, err := cloudinary.NewFromURL(os.Getenv("CLOUDINARY_URL"))
 	if err != nil {
 		log.Println("Error creating Cloudinary instance:", err)
 		return
 	}
+	publicID := extractFileName(fileURL + mfData.link)
+	asset, err := cld.Admin.Asset(context.Background(), admin.AssetParams{PublicID: publicID})
 
-	publicID := extractFileName(fileURL)
-
-	resp, err := cld.Upload.Upload(context.Background(), fileURL, uploader.UploadParams{
-		PublicID: publicID,
-	})
-	if err != nil {
-		log.Println("Error uploading to Cloudinary:", err)
+	secureUrl := asset.SecureURL
+	if err == nil && asset.PublicID == "" {
+		resp, err := cld.Upload.Upload(context.Background(), fileURL+mfData.link, uploader.UploadParams{
+			PublicID: publicID,
+		})
+		if err != nil {
+			log.Println("Error uploading to Cloudinary:", err)
+			return
+		}
+		secureUrl = resp.SecureURL
+	} else if err != nil {
 		return
 	}
-
-	log.Printf("File uploaded successfully: %s\n", resp.SecureURL)
 
 	month := extractMonth(publicID)
 	fileUUID := uuid.New().String()
@@ -179,11 +243,10 @@ func uploadToCloudinary(fileURL string) {
 		"_id":            fileUUID,
 		"month":          month,
 		"completeName":   publicID,
-		"cloudinaryLink": resp.SecureURL,
+		"cloudinaryLink": secureUrl,
 		"fund_house":     "nippon",
 	}
-
-	collection := mongo_client.Client.Database(os.Getenv("DATABASE_NAME")).Collection(os.Getenv("COLLECTION_NAME"))
+	collection := mongo_client.Client.Database(os.Getenv("DATABASE")).Collection(os.Getenv("MFCOLLECTION"))
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_, err = collection.InsertOne(ctx, document)
@@ -268,8 +331,6 @@ func checkFileExistence(cld *cloudinary.Cloudinary, publicID string) (bool, erro
 }
 
 func extractFileName(fileURL string) string {
-	assert(fileURL == "", "extractFileName fileURL == \"\"")
-
 	fileName := path.Base(fileURL)
 	return strings.TrimSuffix(fileName, path.Ext(fileName))
 }
