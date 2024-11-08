@@ -32,14 +32,6 @@ import (
 	"gopkg.in/mgo.v2/bson"
 )
 
-func assert(b bool, mess string) {
-	green := "\033[32m"
-	reset := "\033[0m"
-	if os.Getenv("DEBUG") == "true" {
-		fmt.Println(green+"Assert PASSED: ", mess+reset)
-	}
-}
-
 func setupCheck() {
 	if len(os.Getenv("CLOUDINARY_URL")) < 5 {
 		panic("Please provied a CLOUDINARY_URL. Run `export CLOUDINARY_URL=your@url` before in your shell for linux and MacOS")
@@ -475,14 +467,11 @@ func processXLSXFile(tempInputFile, month string) error {
 			// Document does not exist, so insert it
 			_, err := collection.InsertOne(context.TODO(), document)
 			if err != nil {
-				log.Fatal(err)
+				println(err.Error())
 			}
 			// fmt.Println("Document inserted with ID:", insertResult.InsertedID)
 		} else if err != nil {
-			log.Fatal(err)
-		} else {
-			// Document already exists
-			// // fmt.Println("Document already exists, skipping insertion.")
+			println(err.Error())
 		}
 
 	}
@@ -719,14 +708,11 @@ func processXLSFile(tempInputFile, month string) error {
 			// Document does not exist, so insert it
 			_, err := collection.InsertOne(context.TODO(), document)
 			if err != nil {
-				log.Fatal(err)
+				println(err.Error())
 			}
 			// // fmt.Println("Document inserted with ID:", insertResult.InsertedID)
 		} else if err != nil {
-			log.Fatal(err)
-		} else {
-			// Document already exists
-			// // fmt.Println("Document already exists, skipping insertion.")
+			println(err.Error())
 		}
 
 	}
@@ -803,15 +789,6 @@ func parseDate(dateStr string) string {
 		}
 	}
 	return ""
-}
-
-func checkFileExistence(cld *cloudinary.Cloudinary, publicID string) (bool, error) {
-	assert(cld == nil, "checkFileExistence cld == null")
-	assert(publicID == "", "checkFileExistence publicId == \"\"")
-	_, err := cld.Admin.Asset(context.Background(), admin.AssetParams{
-		PublicID: publicID,
-	})
-	return !strings.Contains(err.Error(), "not found"), nil
 }
 
 func extractFileName(fileURL string) string {
