@@ -6,6 +6,11 @@ import (
 	"strings"
 	"testing"
 
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+
 	"github.com/PuerkitoBio/goquery"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"gopkg.in/mgo.v2/bson"
@@ -1272,5 +1277,269 @@ func TestCalculateOperatingEfficiencyScore_TotalAssetsMissing(t *testing.T) {
 
 	if result != expected {
 		t.Errorf("Expected %v got %v", expected, result)
+	}
+}
+
+// Test generated using Keploy
+func TestIncreaseInRoa_NotEnoughData(t *testing.T) {
+	netProfit := primitive.A{"1000"}
+	totalAssets := primitive.A{"5000"}
+	result := increaseInRoa(netProfit, totalAssets)
+	if result {
+		t.Errorf("Expected false, got %v", result)
+	}
+}
+
+// Test generated using Keploy
+func TestSafeToFloat_EmptyString(t *testing.T) {
+	input := ""
+	_, err := safeToFloat(input)
+	if err == nil {
+		t.Errorf("Expected error, got nil")
+	}
+}
+
+// Test generated using Keploy
+func TestFetchPeerData_Success(t *testing.T) {
+	// Create a mock server
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Simulate a valid HTML response
+		fmt.Fprintln(w, `<html><body>
+			<table>
+				<tbody>
+					<tr data-row-company-id="1">
+						<td class="text"><a>Peer Company</a></td>
+						<td>1000</td>
+						<td>15.0</td>
+						<td>5000</td>
+						<td>2.0%</td>
+						<td>100</td>
+						<td>5%</td>
+						<td>200</td>
+						<td>10%</td>
+						<td>15%</td>
+					</tr>
+				</tbody>
+				<tfoot>
+					<tr>
+						<td>Total</td>
+						<td>1</td>
+						<td>1000</td>
+						<td>15.0</td>
+						<td>5000</td>
+						<td>2.0%</td>
+						<td>100</td>
+						<td>5%</td>
+						<td>200</td>
+						<td>10%</td>
+						<td>15%</td>
+					</tr>
+				</tfoot>
+			</table>
+		</body></html>`)
+	}))
+	defer server.Close()
+
+	// Override the COMPANY_URL environment variable
+	os.Setenv("COMPANY_URL", server.URL)
+
+	dataWarehouseID := "validID"
+
+	peersData, err := FetchPeerData(dataWarehouseID)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	if len(peersData) != 2 {
+		t.Errorf("Expected 2 peers data, got %d", len(peersData))
+	}
+}
+
+// Test generated using Keploy
+func TestGetMarketCapCategory_NaNInput(t *testing.T) {
+	input := "NaN"
+	expected := "Unknown Category"
+	result := GetMarketCapCategory(input)
+	if result != expected {
+		t.Errorf("Expected %v, got %v", expected, result)
+	}
+}
+
+// Test generated using Keploy
+func TestGetMarketCapCategory_NonNumericInput(t *testing.T) {
+	input := "invalid"
+	expected := "Small Cap"
+	result := GetMarketCapCategory(input)
+	if result != expected {
+		t.Errorf("Expected %v, got %v", expected, result)
+	}
+}
+
+// Test generated using Keploy
+func TestCompareWithPeers_MedianParseError(t *testing.T) {
+	stock := types.Stock{
+		Name: "Test Stock",
+		PE:   15.5,
+	}
+	peers := primitive.A{
+		bson.M{
+			"pe": "10.0",
+		},
+		"invalid median data",
+	}
+	result := compareWithPeers(stock, peers)
+	if result == 0.0 {
+		t.Errorf("Expected a non-zero score, got %v", result)
+	}
+}
+
+// Test generated using Keploy
+func TestFetchPeerData_Non200Response(t *testing.T) {
+	// Create a mock server that returns a 500 Internal Server Error
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	// Override the COMPANY_URL environment variable
+	os.Setenv("COMPANY_URL", server.URL)
+
+	dataWarehouseID := "validID"
+
+	_, err := FetchPeerData(dataWarehouseID)
+	if err == nil {
+		t.Errorf("Expected error due to non-200 response, got nil")
+	}
+}
+
+// Test generated using Keploy
+func TestFetchCompanyData_ValidURL(t *testing.T) {
+	// Create a mock server that returns valid HTML
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, `<html><body><div data-warehouse-id="123"></div></body></html>`)
+	}))
+	defer server.Close()
+
+	// Fetch company data using the mock server URL
+	data, err := FetchCompanyData(server.URL)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	if data == nil {
+		t.Errorf("Expected non-nil data, got nil")
+	}
+}
+
+// Test generated using Keploy
+func TestFetchCompanyData_MissingSections(t *testing.T) {
+	html := `
+    <html>
+    <body>
+        <div data-warehouse-id="123"></div>
+        <li class="flex flex-space-between" data-source="default">
+            <span class="name">Market Cap</span>
+            <span class="nowrap value">100000</span>
+        </li>
+    </body>
+    </html>`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprintln(w, html)
+	}))
+	defer server.Close()
+	data, err := FetchCompanyData(server.URL)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if _, ok := data["profitLoss"]; ok {
+		t.Errorf("Did not expect profitLoss data")
+	}
+	if _, ok := data["balanceSheet"]; ok {
+		t.Errorf("Did not expect balanceSheet data")
+	}
+}
+
+// Test generated using Keploy
+func TestFetchCompanyData_ProsAndCons(t *testing.T) {
+	html := `
+    <html>
+    <body>
+        <div class="pros">
+            <ul>
+                <li>Strong financials</li>
+                <li>Growing revenue</li>
+            </ul>
+        </div>
+        <div class="cons">
+            <ul>
+                <li>High debt</li>
+            </ul>
+        </div>
+    </body>
+    </html>`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, html)
+	}))
+	defer server.Close()
+
+	data, err := FetchCompanyData(server.URL)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+
+	expectedPros := []string{"Strong financials", "Growing revenue"}
+	expectedCons := []string{"High debt"}
+
+	if !reflect.DeepEqual(data["pros"], expectedPros) {
+		t.Errorf("Expected pros %v, got %v", expectedPros, data["pros"])
+	}
+
+	if !reflect.DeepEqual(data["cons"], expectedCons) {
+		t.Errorf("Expected cons %v, got %v", expectedCons, data["cons"])
+	}
+}
+
+// Test generated using Keploy
+func TestCompareWithPeers_ValidData(t *testing.T) {
+	stock := types.Stock{
+		Name:            "Test Stock",
+		PE:              15.5,
+		MarketCap:       10000,
+		DividendYield:   2.5,
+		ROCE:            20.0,
+		QuarterlySales:  7000.0,
+		QuarterlyProfit: 2000.0,
+	}
+	peers := primitive.A{
+		bson.M{"pe": "10.0", "market_cap": "8000", "div_yield": "2.0%", "roce": "18.0", "sales_qtr": "500", "np_qtr": "50"},
+		bson.M{"pe": "12.0", "market_cap": "9000", "div_yield": "2.2%", "roce": "19.0", "sales_qtr": "600", "np_qtr": "60"},
+		bson.M{"pe": "11.0", "market_cap": "8500", "div_yield": "2.1%", "roce": "18.5", "sales_qtr": "550", "np_qtr": "55"},
+	}
+	result := compareWithPeers(stock, peers)
+	if result == 0.0 {
+		t.Errorf("Expected non-zero peer comparison score, got %v", result)
+	}
+}
+
+// Test generated using Keploy
+func TestFetchPeerData_MalformedURL(t *testing.T) {
+	// Override the COMPANY_URL environment variable with a malformed URL
+	os.Setenv("COMPANY_URL", "http://%41:8080/") // %41 is 'A', but this is a malformed URL
+
+	dataWarehouseID := "validID"
+	_, err := FetchPeerData(dataWarehouseID)
+	if err == nil {
+		t.Errorf("Expected error due to malformed URL, got nil")
+	}
+}
+
+// Test generated using Keploy
+func TestIncreaseInRoa_InvalidElements(t *testing.T) {
+	netProfit := primitive.A{1000, 1500, 2000}        // Integers instead of strings
+	totalAssets := primitive.A{5000, 5500, "invalid"} // Last element is not a valid string
+	result := increaseInRoa(netProfit, totalAssets)
+	if result != false {
+		t.Errorf("Expected false, got %v", result)
 	}
 }
