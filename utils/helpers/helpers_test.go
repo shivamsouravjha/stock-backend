@@ -1,19 +1,19 @@
 package helpers
 
 import (
-    "reflect"
-    "stockbackend/types"
-    "strings"
-    "testing"
+	"reflect"
+	"stockbackend/types"
+	"strings"
+	"testing"
 
-    "fmt"
-    "net/http"
-    "net/http/httptest"
-    "os"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
 
-    "github.com/PuerkitoBio/goquery"
-    "go.mongodb.org/mongo-driver/bson/primitive"
-    "gopkg.in/mgo.v2/bson"
+	"github.com/PuerkitoBio/goquery"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"gopkg.in/mgo.v2/bson"
 )
 
 func TestMatchHeader_NonMatchingPattern(t *testing.T) {
@@ -1433,7 +1433,7 @@ func TestFetchCompanyData_ValidURL(t *testing.T) {
 
 // Test generated using Keploy
 func TestFetchCompanyData_MissingSections(t *testing.T) {
-    html := `
+	html := `
     <html>
     <body>
         <div data-warehouse-id="123"></div>
@@ -1443,27 +1443,26 @@ func TestFetchCompanyData_MissingSections(t *testing.T) {
         </li>
     </body>
     </html>`
-    server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        w.Header().Set("Content-Type", "text/html")
-        fmt.Fprintln(w, html)
-    }))
-    defer server.Close()
-    data, err := FetchCompanyData(server.URL)
-    if err != nil {
-        t.Fatalf("Expected no error, got %v", err)
-    }
-    if _, ok := data["profitLoss"]; ok {
-        t.Errorf("Did not expect profitLoss data")
-    }
-    if _, ok := data["balanceSheet"]; ok {
-        t.Errorf("Did not expect balanceSheet data")
-    }
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		fmt.Fprintln(w, html)
+	}))
+	defer server.Close()
+	data, err := FetchCompanyData(server.URL)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
+	if _, ok := data["profitLoss"]; ok {
+		t.Errorf("Did not expect profitLoss data")
+	}
+	if _, ok := data["balanceSheet"]; ok {
+		t.Errorf("Did not expect balanceSheet data")
+	}
 }
-
 
 // Test generated using Keploy
 func TestFetchCompanyData_ProsAndCons(t *testing.T) {
-    html := `
+	html := `
     <html>
     <body>
         <div class="pros">
@@ -1479,72 +1478,68 @@ func TestFetchCompanyData_ProsAndCons(t *testing.T) {
         </div>
     </body>
     </html>`
-    server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        fmt.Fprintln(w, html)
-    }))
-    defer server.Close()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, html)
+	}))
+	defer server.Close()
 
-    data, err := FetchCompanyData(server.URL)
-    if err != nil {
-        t.Fatalf("Expected no error, got %v", err)
-    }
+	data, err := FetchCompanyData(server.URL)
+	if err != nil {
+		t.Fatalf("Expected no error, got %v", err)
+	}
 
-    expectedPros := []string{"Strong financials", "Growing revenue"}
-    expectedCons := []string{"High debt"}
+	expectedPros := []string{"Strong financials", "Growing revenue"}
+	expectedCons := []string{"High debt"}
 
-    if !reflect.DeepEqual(data["pros"], expectedPros) {
-        t.Errorf("Expected pros %v, got %v", expectedPros, data["pros"])
-    }
+	if !reflect.DeepEqual(data["pros"], expectedPros) {
+		t.Errorf("Expected pros %v, got %v", expectedPros, data["pros"])
+	}
 
-    if !reflect.DeepEqual(data["cons"], expectedCons) {
-        t.Errorf("Expected cons %v, got %v", expectedCons, data["cons"])
-    }
+	if !reflect.DeepEqual(data["cons"], expectedCons) {
+		t.Errorf("Expected cons %v, got %v", expectedCons, data["cons"])
+	}
 }
-
-
 
 // Test generated using Keploy
 func TestCompareWithPeers_ValidData(t *testing.T) {
-    stock := types.Stock{
-        Name:            "Test Stock",
-        PE:              15.5,
-        MarketCap:       10000,
-        DividendYield:   2.5,
-        ROCE:            20.0,
-        QuarterlySales:  7000.0,
-        QuarterlyProfit: 2000.0,
-    }
-    peers := primitive.A{
-        bson.M{"pe": "10.0", "market_cap": "8000", "div_yield": "2.0%", "roce": "18.0", "sales_qtr": "500", "np_qtr": "50"},
-        bson.M{"pe": "12.0", "market_cap": "9000", "div_yield": "2.2%", "roce": "19.0", "sales_qtr": "600", "np_qtr": "60"},
-        bson.M{"pe": "11.0", "market_cap": "8500", "div_yield": "2.1%", "roce": "18.5", "sales_qtr": "550", "np_qtr": "55"},
-    }
-    result := compareWithPeers(stock, peers)
-    if result == 0.0 {
-        t.Errorf("Expected non-zero peer comparison score, got %v", result)
-    }
+	stock := types.Stock{
+		Name:            "Test Stock",
+		PE:              15.5,
+		MarketCap:       10000,
+		DividendYield:   2.5,
+		ROCE:            20.0,
+		QuarterlySales:  7000.0,
+		QuarterlyProfit: 2000.0,
+	}
+	peers := primitive.A{
+		bson.M{"pe": "10.0", "market_cap": "8000", "div_yield": "2.0%", "roce": "18.0", "sales_qtr": "500", "np_qtr": "50"},
+		bson.M{"pe": "12.0", "market_cap": "9000", "div_yield": "2.2%", "roce": "19.0", "sales_qtr": "600", "np_qtr": "60"},
+		bson.M{"pe": "11.0", "market_cap": "8500", "div_yield": "2.1%", "roce": "18.5", "sales_qtr": "550", "np_qtr": "55"},
+	}
+	result := compareWithPeers(stock, peers)
+	if result == 0.0 {
+		t.Errorf("Expected non-zero peer comparison score, got %v", result)
+	}
 }
 
 // Test generated using Keploy
 func TestFetchPeerData_MalformedURL(t *testing.T) {
-    // Override the COMPANY_URL environment variable with a malformed URL
-    os.Setenv("COMPANY_URL", "http://%41:8080/") // %41 is 'A', but this is a malformed URL
+	// Override the COMPANY_URL environment variable with a malformed URL
+	os.Setenv("COMPANY_URL", "http://%41:8080/") // %41 is 'A', but this is a malformed URL
 
-    dataWarehouseID := "validID"
-    _, err := FetchPeerData(dataWarehouseID)
-    if err == nil {
-        t.Errorf("Expected error due to malformed URL, got nil")
-    }
+	dataWarehouseID := "validID"
+	_, err := FetchPeerData(dataWarehouseID)
+	if err == nil {
+		t.Errorf("Expected error due to malformed URL, got nil")
+	}
 }
 
 // Test generated using Keploy
 func TestIncreaseInRoa_InvalidElements(t *testing.T) {
-    netProfit := primitive.A{1000, 1500, 2000} // Integers instead of strings
-    totalAssets := primitive.A{5000, 5500, "invalid"} // Last element is not a valid string
-    result := increaseInRoa(netProfit, totalAssets)
-    if result != false {
-        t.Errorf("Expected false, got %v", result)
-    }
+	netProfit := primitive.A{1000, 1500, 2000}        // Integers instead of strings
+	totalAssets := primitive.A{5000, 5500, "invalid"} // Last element is not a valid string
+	result := increaseInRoa(netProfit, totalAssets)
+	if result != false {
+		t.Errorf("Expected false, got %v", result)
+	}
 }
-
-
