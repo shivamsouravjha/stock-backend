@@ -22,6 +22,8 @@ import (
 
 // Helper function to match header titles
 func MatchHeader(cellValue string, patterns []string) bool {
+	fmt.Println("Hello")
+
 	normalizedValue := NormalizeString(cellValue)
 	for _, pattern := range patterns {
 		matched, _ := regexp.MatchString(pattern, normalizedValue)
