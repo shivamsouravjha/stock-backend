@@ -12,6 +12,7 @@ func Routes(r *gin.Engine) {
 
 	{
 		v1.POST("/uploadXlsx", controllers.FileController.ParseXLSXFile)
+		v1.POST("/mutualFundSimilarity", controllers.MFCompartorController.ParseMFSheets)
 		v1.GET("/keepServerRunning", controllers.HealthController.IsRunning)
 		v1.POST("/fetchGmail", controllers.GmailController.GetEmails)
 		v1.GET("/fetchStocks", controllers.StockController.GetStocks)
