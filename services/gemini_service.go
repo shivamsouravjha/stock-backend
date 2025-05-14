@@ -118,14 +118,15 @@ The sheet data is:
 		//convert cleanedText to array Instrument
 		var mutualFundData types.MutualFundData
 		err = json.Unmarshal([]byte(cleanedText), &mutualFundData)
-		sanitisedMutualFundData := types.MutualFundData{}
-		for _, fundData := range mutualFundData.FundData {
-			if strings.Contains(fundData.Isin, "in") && len(fundData.Isin) == 12 {
-				sanitisedMutualFundData.FundData = append(sanitisedMutualFundData.FundData, fundData)
-			}
-		}
 		if err != nil {
 			return types.MutualFundData{}
+		}
+
+		sanitisedMutualFundData := types.MutualFundData{}
+		for _, fundData := range mutualFundData.FundData {
+			if strings.Contains(fundData.Isin, "IN") && len(fundData.Isin) == 12 {
+				sanitisedMutualFundData.FundData = append(sanitisedMutualFundData.FundData, fundData)
+			}
 		}
 		return sanitisedMutualFundData
 	}
