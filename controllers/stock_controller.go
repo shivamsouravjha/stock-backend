@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	mongo_client "stockbackend/clients/mongo"
+	"stockbackend/services"
 	"stockbackend/utils/helpers"
 	"strconv"
 
@@ -16,6 +17,7 @@ import (
 
 type StockControllerI interface {
 	GetStocks(ctx *gin.Context)
+	UpdateCompanyData(ctx *gin.Context)
 }
 
 type stockController struct{}
@@ -74,4 +76,18 @@ func (s *stockController) GetStocks(ctx *gin.Context) {
 		ctx.Writer.Flush() // Flush each chunk immediately to the client
 	}
 	ctx.JSON(200, gin.H{"message": "Stocks are fetched"})
+}
+
+func (s *stockController) UpdateCompanyData(ctx *gin.Context) {
+	zap.L().Info("Manual company data update triggered via API")
+
+	// Run the company data update in a goroutine to avoid blocking the request
+	go func() {
+		services.UpdateCompanyData()
+	}()
+
+	ctx.JSON(200, gin.H{
+		"message": "Company data update process started",
+		"status":  "running",
+	})
 }

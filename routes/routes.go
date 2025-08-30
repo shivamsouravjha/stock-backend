@@ -16,5 +16,6 @@ func Routes(r *gin.Engine) {
 		v1.GET("/keepServerRunning", controllers.HealthController.IsRunning)
 		v1.POST("/fetchGmail", controllers.GmailController.GetEmails)
 		v1.GET("/fetchStocks", controllers.StockController.GetStocks)
+		v1.POST("/updateCompanyData", controllers.StockController.UpdateCompanyData)
 	}
 }

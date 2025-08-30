@@ -56,8 +56,8 @@ func CORSMiddleware() gin.HandlerFunc {
 	}
 }
 
-// GracefulShutdown handles graceful shutdown of the server and ticker
-func GracefulShutdown(server *http.Server, ticker, rankUpdater *time.Ticker) {
+// GracefulShutdown handles graceful shutdown of the server and tickers
+func GracefulShutdown(server *http.Server, ticker, rankUpdater, companyDataUpdater *time.Ticker) {
 	stopper := make(chan os.Signal, 1)
 	// Listen for interrupt and SIGTERM signals
 	signal.Notify(stopper, os.Interrupt, syscall.SIGTERM)
@@ -66,9 +66,10 @@ func GracefulShutdown(server *http.Server, ticker, rankUpdater *time.Ticker) {
 		<-stopper
 		zap.L().Info("Shutting down gracefully...")
 
-		// Stop the ticker
+		// Stop the tickers
 		ticker.Stop()
 		rankUpdater.Stop()
+		companyDataUpdater.Stop()
 		// Create a context with a timeout for shutdown
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -118,6 +119,7 @@ func main() {
 
 	ticker := startTicker()
 	rankUpdater := startRankUpdater()
+	companyDataUpdater := startCompanyDataUpdater()
 	routes.Routes(router)
 
 	port := os.Getenv("PORT")
@@ -131,8 +133,8 @@ func main() {
 		Handler: router,
 	}
 
-	// Call GracefulShutdown with the server and ticker
-	GracefulShutdown(server, ticker, rankUpdater)
+	// Call GracefulShutdown with the server and tickers
+	GracefulShutdown(server, ticker, rankUpdater, companyDataUpdater)
 
 	// Start the server
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -171,6 +173,19 @@ func startRankUpdater() *time.Ticker {
 			//write  a function that is called every 30 days
 			zap.L().Info("Rank updater tick at: ", zap.String("time", t.String()))
 			services.UpdateRating()
+		}
+	}()
+	return ticker
+}
+
+func startCompanyDataUpdater() *time.Ticker {
+	// Update company data every 6 hours
+	ticker := time.NewTicker(24 * 30 * time.Hour)
+
+	go func() {
+		for t := range ticker.C {
+			zap.L().Info("Company data updater tick at: ", zap.String("time", t.String()))
+			services.UpdateCompanyData()
 		}
 	}()
 	return ticker
