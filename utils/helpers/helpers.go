@@ -3,7 +3,7 @@ package helpers
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math"
 	"net/http"
 	"os"
@@ -22,6 +22,8 @@ import (
 
 // Helper function to match header titles
 func MatchHeader(cellValue string, patterns []string) bool {
+	fmt.Println("Hello")
+
 	normalizedValue := NormalizeString(cellValue)
 	for _, pattern := range patterns {
 		matched, _ := regexp.MatchString(pattern, normalizedValue)
@@ -379,7 +381,7 @@ func FetchPeerData(dataWarehouseID string) ([]map[string]string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := ioutil.ReadAll(resp.Body)
+		bodyBytes, _ := io.ReadAll(resp.Body)
 		bodyString := string(bodyBytes)
 		zap.L().Error("Received non-200 response code", zap.Int("status_code", resp.StatusCode), zap.String("body", bodyString))
 		return nil, fmt.Errorf("received non-200 response code from peers API: %d", resp.StatusCode)
