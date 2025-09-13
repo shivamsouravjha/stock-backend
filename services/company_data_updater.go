@@ -34,6 +34,7 @@ func UpdateCompanyData() {
 	errorCount := 0
 
 	for cursor.Next(context.Background()) {
+		time.Sleep(1 * time.Second)
 		var result bson.M
 		err := cursor.Decode(&result)
 		if err != nil {
@@ -73,6 +74,9 @@ func UpdateCompanyData() {
 			continue
 		}
 
+		// Calculate target price and recommendation using the investment algorithm
+		valuation := CalculateTargetPrice(companyData)
+
 		// Prepare update data - preserve ID and update all other fields
 		updateData := bson.M{
 			"$set": bson.M{
@@ -94,8 +98,16 @@ func UpdateCompanyData() {
 				"ratios":              companyData["ratios"],
 				"shareholdingPattern": companyData["shareholdingPattern"],
 				"peers":               companyData["peers"],
-				"lastUpdated":         time.Now(),
-				"update_at":           time.Now(),
+				// Valuation fields
+				"targetPrice":    valuation.TargetPrice,
+				"recommendation": valuation.Recommendation,
+				"upsideDownside": valuation.UpsideDownside,
+				"dcfValue":       valuation.DCFValue,
+				"relativeValue":  valuation.RelativeValue,
+				"scenarioValue":  valuation.ScenarioValue,
+				"valuationData":  valuation,
+				"lastUpdated":    time.Now(),
+				"update_at":      time.Now(),
 			},
 		}
 
@@ -117,7 +129,10 @@ func UpdateCompanyData() {
 			updatedCount++
 			zap.L().Info("Successfully updated company data",
 				zap.String("company", companyName),
-				zap.Any("_id", companyID))
+				zap.Any("_id", companyID),
+				zap.Float64("targetPrice", valuation.TargetPrice),
+				zap.String("recommendation", valuation.Recommendation),
+				zap.Float64("upsideDownside", valuation.UpsideDownside))
 		} else {
 			zap.L().Warn("No changes made to company data",
 				zap.String("company", companyName),
