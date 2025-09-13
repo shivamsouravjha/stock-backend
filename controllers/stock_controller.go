@@ -297,7 +297,13 @@ func (s *stockController) GetStocksWithRecommendations(ctx *gin.Context) {
 		// Add last updated timestamp
 		stockDetail["lastUpdated"] = result["lastUpdated"]
 
-		// Marshal the stock detail to JSON
+		// Add additional scores to the stock detail
+		stockDetail["operatingEfficiencyScore"] = result["operatingEfficiencyScore"]
+		stockDetail["leverageScore"] = result["leverageScore"]
+		stockDetail["profitabilityScore"] = result["profitabilityScore"]
+		stockDetail["peerComparisonScore"] = result["peerComparisonScore"]
+		stockDetail["trendScore"] = result["trendScore"]
+
 		stockDataMarshal, err := json.Marshal(stockDetail)
 		if err != nil {
 			zap.L().Error("Error marshalling data", zap.Error(err))

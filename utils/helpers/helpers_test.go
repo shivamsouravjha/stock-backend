@@ -815,7 +815,7 @@ func TestRateStock_MissingFields(t *testing.T) {
 		"name": "Incomplete Stock",
 		// Missing other fields
 	}
-	result := RateStock(stock)
+	_, _, result := RateStock(stock)
 	expected := 0.0
 	if result != expected {
 		t.Errorf("Expected %v, got %v", expected, result)
@@ -834,7 +834,7 @@ func TestRateStock_ValidFields(t *testing.T) {
 		"peers":            primitive.A{bson.M{"pe": "10.0", "market_cap": "8000", "div_yield": "2.0%", "roce": "18.0", "sales_qtr": "500", "np_qtr": "50"}, bson.M{"pe": "12.0", "market_cap": "9000", "div_yield": "2.2%", "roce": "19.0", "sales_qtr": "600", "np_qtr": "60"}, bson.M{"pe": "11.0", "market_cap": "8500", "div_yield": "2.1%", "roce": "18.5", "sales_qtr": "550", "np_qtr": "55"}},
 		"quarterlyResults": bson.M{"Q1": primitive.A{bson.M{"sales": "1000", "profit": "100"}, bson.M{"sales": "1100", "profit": "110"}}, "Q2": primitive.A{bson.M{"sales": "1200", "profit": "120"}, bson.M{"sales": "1300", "profit": "130"}}},
 	}
-	result := RateStock(stock)
+	_, _, result := RateStock(stock)
 	if result == 0.0 {
 		t.Errorf("Expected non-zero rating, got %v", result)
 	}
@@ -987,7 +987,7 @@ func TestGenerateFScore_OnProfitabilityError(t *testing.T) {
 		},
 	}
 
-	result := GenerateFScore(stock)
+	result, _, _, _ := GenerateFScore(stock)
 	expected := -1
 
 	if result != expected {
@@ -1008,7 +1008,7 @@ func TestGenerateFScore_OnLeverageScoreError(t *testing.T) {
 		},
 	}
 
-	result := GenerateFScore(stock)
+	result, _, _, _ := GenerateFScore(stock)
 	expected := -1
 
 	if result != expected {
@@ -1033,7 +1033,7 @@ func TestGenerateFScore_OnOperatingEfficiencyError(t *testing.T) {
 		},
 	}
 
-	result := GenerateFScore(stock)
+	result, _, _, _ := GenerateFScore(stock)
 	expected := -1
 
 	if result != expected {
@@ -1112,7 +1112,7 @@ func TestGenerateTestFScore_ValidInput(t *testing.T) {
 		},
 	}
 
-	result := GenerateFScore(stock)
+	result, _, _, _ := GenerateFScore(stock)
 	expected := 6
 	if result != expected {
 		t.Errorf("Expected %v got %v", expected, result)

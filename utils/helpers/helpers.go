@@ -121,7 +121,7 @@ func GetMarketCapCategory(marketCapValue string) string {
 
 // rateStock calculates the final stock rating
 
-func RateStock(stock map[string]interface{}) float64 {
+func RateStock(stock map[string]interface{}) (float64, float64, float64) {
 	// zap.L().Info("Stock data", zap.Any("stock", stock))
 	stockData := types.Stock{
 		Name:          stock["name"].(string),
@@ -141,7 +141,7 @@ func RateStock(stock map[string]interface{}) float64 {
 
 	finalScore := peerComparisonScore + trendScore
 	finalScore = math.Round(finalScore*100) / 100
-	return finalScore
+	return peerComparisonScore, trendScore, finalScore
 }
 
 // compareWithPeers calculates a peer comparison score
@@ -672,28 +672,22 @@ func increaseInRoa(netProfit primitive.A, totalAssets primitive.A) bool {
 }
 
 // Helper function to generate the F-Score for a stock
-func GenerateFScore(stock map[string]interface{}) int {
+func GenerateFScore(stock map[string]interface{}) (int, int, int, int) {
 	fScore := 0
 
 	profitablityScore := calculateProfitabilityScore(stock)
-	if profitablityScore < 0 {
-		return -1
-	}
 	fScore += profitablityScore
 
 	leverageScore := calculateLeverageScore(stock)
-	if leverageScore < 0 {
-		return -1
-	}
 	fScore += leverageScore
 
 	operatingEfficiencyScore := calculateOperatingEfficiencyScore(stock)
-	if operatingEfficiencyScore < 0 {
-		return -1
-	}
 	fScore += operatingEfficiencyScore
 
-	return fScore
+	if operatingEfficiencyScore < 0 || leverageScore < 0 || profitablityScore < 0 {
+		return -1, operatingEfficiencyScore, leverageScore, profitablityScore
+	}
+	return fScore, operatingEfficiencyScore, leverageScore, profitablityScore
 }
 
 func safeToFloat(s string) (float64, error) {

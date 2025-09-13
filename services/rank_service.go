@@ -21,19 +21,24 @@ func UpdateRating() {
 		zap.L().Error("Error while fetching documents", zap.Error(err))
 	}
 	defer cursor.Close(context.Background())
-	var stockRate float64
+	var peerComparisonScore, trendScore, finalScore float64
 	for cursor.Next(context.Background()) {
 		var result bson.M
 		err := cursor.Decode(&result)
 		if err != nil {
 			zap.L().Error("Error while decoding document", zap.Error(err))
 		}
-		stockRate = helpers.RateStock(result)
-		fscore := helpers.GenerateFScore(result)
-		_, err = collection.UpdateOne(context.Background(), bson.M{"_id": result["_id"]}, bson.M{"$set": bson.M{"rank": stockRate, "fScore": fscore}})
+		peerComparisonScore, trendScore, finalScore = helpers.RateStock(result)
+		fScore, operatingEfficiencyScore, leverageScore, profitablityScore := helpers.GenerateFScore(result)
+		_, err = collection.UpdateOne(context.Background(), bson.M{"_id": result["_id"]}, bson.M{"$set": bson.M{"rank": finalScore,
+			"trendScore":          trendScore,
+			"peerComparisonScore": peerComparisonScore, "fScore": fScore,
+			"operatingEfficiency": operatingEfficiencyScore,
+			"leverageScore":       leverageScore,
+			"profitablityScore":   profitablityScore}})
 		if err != nil {
 			zap.L().Error("Error while updating document", zap.Error(err))
 		}
-		zap.L().Info("Updated rank for stock", zap.Any("stock", result["name"]), zap.Any("rate", stockRate))
+		zap.L().Info("Updated rank for stock", zap.Any("stock", result["name"]), zap.Any("rate", finalScore))
 	}
 }
