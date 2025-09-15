@@ -166,7 +166,7 @@ func startTicker() *time.Ticker {
 }
 
 func startRankUpdater() *time.Ticker {
-	ticker := time.NewTicker(30 * time.Hour * 24)
+	ticker := time.NewTicker(1 * time.Hour * 24)
 
 	go func() {
 		for t := range ticker.C {
@@ -179,8 +179,8 @@ func startRankUpdater() *time.Ticker {
 }
 
 func startCompanyDataUpdater() *time.Ticker {
-	// Update company data every 6 hours
-	ticker := time.NewTicker(24 * 30 * time.Hour)
+	// Update company data every 24 hours
+	ticker := time.NewTicker(24 * 1 * time.Hour)
 
 	go func() {
 		for t := range ticker.C {
